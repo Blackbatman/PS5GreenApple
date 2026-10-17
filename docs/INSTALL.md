@@ -57,7 +57,7 @@ Makefile.
 ### 1.3 Build
 
 ```bash
-git clone https://github.com/YOUR_GH_USERNAME/PS5GreenApple
+git clone https://github.com/Blackbatman/PS5GreenApple
 cd PS5GreenApple
 make                # produces ps5greenapple.elf
 ```

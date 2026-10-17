@@ -8,8 +8,8 @@ Native SDL2 homebrew · pure-software renderer · FW 3.00 – 13.60 · built wit
 
 ![Screenshots](screenshots/02-desktop.png)
 
-[![CI](https://github.com/YOUR_GH_USERNAME/PS5GreenApple/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GH_USERNAME/PS5GreenApple/actions/workflows/ci.yml)
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![CI](https://github.com/Blackbatman/PS5GreenApple/actions/workflows/ci.yml/badge.svg)](https://github.com/Blackbatman/PS5GreenApple/actions/workflows/ci.yml)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Platform](https://img.shields.io/badge/platform-PS5%20%7C%20Linux-lightgrey)
 
 </div>
@@ -173,5 +173,8 @@ does PS5GreenApple.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Embedded components: Liberation fonts
-(SIL OFL 1.1), stb_truetype/stb_image_write (public domain / MIT).
+GPL-3.0-or-later — see [LICENSE](LICENSE). Built on ps5-payload-sdk
+(GPLv3+), which is why this project carries the GPL. Embedded components:
+Liberation fonts (SIL OFL 1.1), stb_truetype/stb_image_write (public domain
+/ MIT), SDL2 (zlib license). Their notices are preserved at the end of the
+LICENSE file.
