@@ -1,0 +1,14 @@
+# build outputs
+build/
+*.elf
+*.o
+shots/
+
+# local test data
+data/
+
+# editors
+.vscode/
+.idea/
+*.swp
+.DS_Store

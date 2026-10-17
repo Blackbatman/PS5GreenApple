@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-shots:
+    name: Host build + screenshots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build headless dump binary
+        run: make host
+
+      - name: Render screenshots
+        run: make shots
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots/*.png
+
+  ps5-elf:
+    name: PS5 payload ELF
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ps5-payload-dev/sdk:latest
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2 for PS5
+        run: |
+          git clone --recursive --depth 1 https://github.com/ps5-payload-dev/SDL /tmp/SDL
+          cd /tmp/SDL
+          mkdir build && cd build
+          ../configure --host=x86_64-pc-freebsd12-elf \
+              --prefix=$PS5_PAYLOAD_SDK/target \
+              --disable-shared --enable-static
+          make -j$(nproc) && make install
+
+      - name: Build ps5greenapple.elf
+        run: make
+
+      - name: Upload ELF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5greenapple-elf
+          path: ps5greenapple.elf

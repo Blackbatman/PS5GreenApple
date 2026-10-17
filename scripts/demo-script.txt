@@ -1,0 +1,119 @@
+# PS5GreenApple screenshot script (run via `make shots`)
+# Virtual time advances 20x real time. Commands:
+#   wait <ms> | press <btn> | move <x> <y> | sel <id> | type <text> | shot <name> | exit
+#
+# Hotspot ids: 1-9 menubar, 60+win close, 100+i dock, 200+ finder sidebar,
+# 230+i finder rows, 300+ terminal, 400+ textedit, 500+ about,
+# 600+ settings, 700+ bootcamp, 800+ osk (903 = Enter).
+
+# ---- 1. boot animation ----
+wait 900
+shot 01-boot-logo
+wait 2700
+
+# ---- 2. clean desktop ----
+move 654 1000
+shot 02-desktop
+
+# ---- 3. dock focus on Finder ----
+wait 300
+shot 03-dock-focus
+
+# ---- 4. Finder ----
+press cross
+wait 400
+shot 04-finder
+
+# ---- 5. enter first folder ----
+sel 230
+wait 150
+press cross
+wait 500
+shot 05-finder-folder
+press circle
+wait 300
+
+# ---- 6. Terminal ----
+sel 101
+wait 150
+press cross
+wait 600
+shot 06-terminal
+
+# ---- 7. open keyboard + type ----
+sel 304
+wait 200
+press cross
+wait 300
+type uname -a
+wait 200
+shot 07-terminal-osk
+
+# ---- 8. run command ----
+sel 903
+wait 150
+press cross
+wait 700
+shot 08-terminal-output
+
+# ---- 9. TextEdit ----
+press circle
+wait 200
+sel 102
+wait 150
+press cross
+wait 500
+shot 09-textedit
+
+# ---- 10. edit text via OSK ----
+sel 400
+wait 150
+press cross
+wait 300
+type Hello from PS5GreenApple!
+wait 200
+shot 10-textedit-edit
+press circle
+wait 200
+
+# ---- 11. Boot Camp ----
+sel 103
+wait 150
+press cross
+wait 500
+shot 11-bootcamp
+press circle
+wait 200
+
+# ---- 12. About ----
+sel 105
+wait 150
+press cross
+wait 500
+shot 12-about
+
+# ---- 13. System Report ----
+sel 500
+wait 150
+press cross
+wait 400
+shot 13-system-report
+press circle
+wait 200
+
+# ---- 14. Settings ----
+sel 104
+wait 150
+press cross
+wait 500
+shot 14-settings
+
+# ---- 15. power dialog + restart fade ----
+press options
+wait 300
+sel 21
+wait 150
+press cross
+wait 450
+shot 15-shutdown
+exit

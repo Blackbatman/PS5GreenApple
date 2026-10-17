@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PS5GreenApple — WebKit Autoloader tile</title>
+<style>
+  body {
+    background: linear-gradient(160deg, #0d0f1a 0%, #1e2440 60%, #2a1e3f 100%);
+    color: #f5f5fa; font-family: -apple-system, "Segoe UI", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    height: 100vh; margin: 0; text-align: center;
+  }
+  .card {
+    background: rgba(40,40,46,.92); border: 1px solid #3a3a44;
+    border-radius: 18px; padding: 42px 52px; max-width: 640px;
+    box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  }
+  h1 { font-size: 30px; margin: 0 0 6px; font-weight: 700; }
+  p  { color: #b9b9c8; line-height: 1.5; }
+  #status { font-family: ui-monospace, monospace; color: #7ee08a; margin-top: 18px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+         background: #32d74b; margin-right: 8px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>&#63743; PS5GreenApple</h1>
+    <p>macOS Sonoma–style desktop environment for jailbroken PS5.</p>
+    <p id="howto">
+      Insert this USB stick, open the WebKit Autoloader page from the PS5
+      browser and select this tile. The payload (<code>payload.elf</code>)
+      sits next to this file and is sent to the etaHEN ELF loader
+      automatically.
+    </p>
+    <div id="status"><span class="dot"></span>waiting for loader bridge…</div>
+  </div>
+
+<script>
+/* WebKit Autoloader tile contract:
+ * - the Autoloader host page embeds tiles in an iframe and provides a JS
+ *   bridge (window.Autoloader / postMessage) that can read a sibling
+ *   payload file and hand it to the resident ELF loader.
+ * - we probe for the bridge and launch when found; otherwise we leave the
+ *   instructions visible (graceful degradation on unsupported FW).        */
+(function () {
+  var status = document.getElementById('status');
+  var attempts = 0;
+
+  function log(msg, ok) {
+    status.innerHTML = '<span class="dot" style="background:' +
+      (ok ? '#32d74b' : '#ffd60a') + '"></span>' + msg;
+  }
+
+  function tryLaunch() {
+    attempts++;
+    if (window.Autoloader && typeof window.Autoloader.loadPayload === 'function') {
+      log('bridge found — sending payload.elf…', true);
+      try {
+        window.Autoloader.loadPayload('payload.elf');
+        log('payload sent — desktop booting…', true);
+        return;
+      } catch (e) {
+        log('bridge rejected payload: ' + e, false);
+      }
+    } else if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ tile: 'PS5GreenApple', cmd: 'load', file: 'payload.elf' }, '*');
+    }
+    if (attempts < 20) setTimeout(tryLaunch, 500);
+    else log('no Autoloader bridge detected — see tile/README.md', false);
+  }
+
+  setTimeout(tryLaunch, 400);
+})();
+</script>
+</body>
+</html>
