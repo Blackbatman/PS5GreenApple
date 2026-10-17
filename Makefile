@@ -21,16 +21,16 @@ ifdef PS5_PAYLOAD_SDK
 include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
 
 CFLAGS  += -O2 -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-           -D__PS5__ \
-           -I$(SRC_DIR) -Ithird_party \
-           -I$(PS5_PAYLOAD_SDK)/target/include \
-           -I$(PS5_PAYLOAD_SDK)/target/include/SDL2
+	   -D__PS5__ \
+	   -I$(SRC_DIR) -Ithird_party \
+	   -I$(PS5_PAYLOAD_SDK)/target/include \
+	   -I$(PS5_PAYLOAD_SDK)/target/include/SDL2
 
 PS5_SRCS := $(filter-out $(SRC_DIR)/backend_dump.c,$(wildcard $(SRC_DIR)/*.c) $(SRC_DIR)/fonts.S)
 PS5_OBJS := $(patsubst $(SRC_DIR)/%.c,build/ps5/%.o,$(filter %.c,$(PS5_SRCS))) \
-            build/ps5/fonts.o
+	    build/ps5/fonts.o
 
-LDFLAGS += -Wl,--allow-shlib-undefined
+LDFLAGS += -Wl,--allow-shlib-undefined -L$(PS5_PAYLOAD_SDK)/target/lib
 LDLIBS  := -lSDL2 -lSceVideoOut -lSceSysmodule -lSceUserService -lScePad -lc -lkernel
 
 all: $(NAME).elf
@@ -60,7 +60,7 @@ endif
 # ------------------------- host test build -------------------------
 HOST_CC   ?= gcc
 HOST_CFLAGS := -O2 -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-               -I$(SRC_DIR) -Ithird_party
+	       -I$(SRC_DIR) -Ithird_party
 
 HOST_SRCS := $(filter-out $(SRC_DIR)/backend_sdl2.c,$(wildcard $(SRC_DIR)/*.c) $(SRC_DIR)/fonts.S)
 

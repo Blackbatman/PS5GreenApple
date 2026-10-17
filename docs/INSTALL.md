@@ -42,13 +42,18 @@ PS5 SDL port and install it into the SDK's `target/` prefix:
 ```bash
 git clone --recursive https://github.com/ps5-payload-dev/SDL
 cd SDL
-mkdir build && cd build
-../configure --host=x86_64-pc-freebsd12-elf \
-    --prefix=$PS5_PAYLOAD_SDK/target \
-    --disable-shared --enable-static
-make -j$(nproc)
-make install
+# official build path: CMake driven by the SDK toolchain environment
+source "$PS5_PAYLOAD_SDK/toolchain/prospero.sh"
+cmake -DCMAKE_BUILD_TYPE=Release -B build-ps5 -S .
+cmake --build build-ps5 --parallel "$(nproc)"
+cmake --install build-ps5 --prefix "$PS5_PAYLOAD_SDK/target"
 ```
+
+Older branches of the port (and the ps5-payload-dev/SDL tree as of some
+2.x snapshots) instead ship autotools; in that case `mkdir build && cd
+build` followed by `../configure --host=x86_64-pc-freebsd12-elf
+--prefix=$PS5_PAYLOAD_SDK/target --disable-shared --enable-static`,
+`make` and `make install` is the equivalent.
 
 If your SDL build lands `sdl2.pc` somewhere else, point
 `PKG_CONFIG_PATH` at it or add `-I`/`-L` flags to `CFLAGS`/`LDFLAGS` in the
