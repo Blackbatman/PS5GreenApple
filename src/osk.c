@@ -98,10 +98,23 @@ void osk_frame(void)
     int tw = font_text_w(FONT_BOLD, S_title, 22);
     font_draw(FONT_BOLD, S_title, x0 + (panel_w - tw) / 2, y0 - 60, 22, g_theme.text_bright);
 
-    /* input preview */
+    /* input preview: show the tail of the buffer near the cursor */
     gfx_round_rect(x0, y0 - 34, panel_w, 30, 8, g_theme.input_bg);
     gfx_push_clip(x0 + 1, y0 - 33, panel_w - 2, 28);
-    font_draw(FONT_MONO, S_buf, x0 + 10, y0 - 30, 18, RGB(120, 220, 130));
+    {
+        int chw = font_text_w(FONT_MONO, " ", 18);
+        int max_chars = (chw > 0) ? (panel_w - 20) / chw : 0;
+        int len = 0;
+        while (S_buf[len]) len++;
+        int start = len - max_chars;
+        if (start < 0) start = 0;
+        char prev[256];
+        int j = 0;
+        for (int i = start; S_buf[i] && j < (int)sizeof(prev) - 1; i++)
+            prev[j++] = (S_buf[i] == '\n') ? ' ' : S_buf[i];
+        prev[j] = 0;
+        font_draw(FONT_MONO, prev, x0 + 10, y0 - 30, 18, RGB(120, 220, 130));
+    }
     gfx_pop_clip();
 
     /* key rows */

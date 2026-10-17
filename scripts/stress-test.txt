@@ -1,0 +1,96 @@
+# PS5GreenApple stress test - exercises paths the demo script skips.
+# Window close hotspots: 60+win (Finder=61, Terminal=62, TextEdit=63,
+# About=64, Settings=65, BootCamp=66). Dock: 100 Finder, 101 Terminal,
+# 102 TextEdit, 103 BootCamp, 104 Settings, 105 About.
+# Settings rows: 600 wallpaper, 601 accent, 602 24h, 603 seconds, 604 fps.
+# TextEdit: 401 save. BootCamp: 702 win shell, 703 linux shell.
+
+# ---- S1: settings - cycle wallpaper + accent, flip three toggles ----
+wait 3600
+sel 104
+press cross
+wait 500
+shot s01-settings
+sel 600
+press cross
+wait 150
+sel 600
+press cross
+wait 150
+sel 601
+press cross
+wait 150
+sel 602
+press cross
+wait 150
+sel 603
+press cross
+wait 150
+sel 604
+press cross
+wait 300
+shot s02-settings-toggled
+
+# ---- S2: close Settings via traffic light ----
+sel 65
+press cross
+wait 300
+shot s03-settings-closed
+
+# ---- S3: Boot Camp - both OS shell previews ----
+sel 103
+press cross
+wait 500
+sel 702
+press cross
+wait 400
+shot s04-bc-win-shell
+press circle
+wait 200
+sel 703
+press cross
+wait 400
+shot s05-bc-linux-shell
+press circle
+wait 200
+sel 66
+press cross
+wait 300
+
+# ---- S4: TextEdit - save to disk, then close ----
+sel 102
+press cross
+wait 500
+sel 401
+press cross
+wait 400
+shot s06-textedit-saved
+sel 63
+press cross
+wait 300
+
+# ---- S5: Terminal - quick command buttons ----
+sel 101
+press cross
+wait 500
+sel 303
+press cross
+wait 500
+shot s07-terminal-sysinfo
+sel 62
+press cross
+wait 300
+
+# ---- S6: Finder - sidebar navigation ----
+sel 100
+press cross
+wait 400
+sel 201
+press cross
+wait 300
+shot s08-finder-sidebar
+sel 61
+press cross
+wait 300
+shot s09-all-closed
+exit
