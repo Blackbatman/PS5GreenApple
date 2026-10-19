@@ -38,8 +38,9 @@ the payload has zero external asset dependencies.
 | **Terminal** | Real shell via `popen()` — run `ls`, `id`, `uname -a`, anything; quick-command buttons; command input via OSK |
 | **TextEdit** | OSK-driven text editor, saves to `/data/PS5GreenApple/notes.txt` |
 | **About** | "About This Mac" page + full System Report (CPU, kernel, firmware, loader, storage) read from live `sysctl` |
+| **Cluster Telemetry** | Live dashboard in About This Mac: rolling unified-VRAM pool and an 8-core thread-load matrix rendered from a sandbox-local mock buffer |
 | **Settings** | Wallpaper, accent color, clock format, FPS overlay — persisted to `/data/PS5GreenApple/settings.ini` |
-| **Boot Camp** | Detects Linux `bzImage`/initramfs payloads and NTFS/exFAT Windows volumes; opens preview shells with **Windows** and **Linux** window chrome |
+| **Boot Camp** | Detects Linux `bzImage`/initramfs payloads and NTFS/exFAT Windows volumes; opens preview shells with **Windows** and **Linux** window chrome; the whole desktop background instantly re-styles to the selected OS theme — macOS **Aqua Slate**, Windows **Fluent Core**, Linux **Wayland Matrix** — in a single frame |
 
 ### DualSense controls
 
