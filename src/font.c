@@ -111,7 +111,7 @@ int font_utf8_next(const char *s, unsigned *out_cp)
 
 int font_draw(int id, const char *s, int x, int y, float size, uint32_t c)
 {
-    if (!s) return x;
+    if (!s || id < 0 || id >= FONT_COUNT) return x;
     Face *f = &S_faces[id];
     if (!f->loaded) return x;
     float scale = stbtt_ScaleForPixelHeight(&f->info, size);
@@ -152,7 +152,7 @@ int font_draw(int id, const char *s, int x, int y, float size, uint32_t c)
 
 int font_text_w(int id, const char *s, float size)
 {
-    if (!s || !S_faces[id].loaded) return 0;
+    if (!s || id < 0 || id >= FONT_COUNT || !S_faces[id].loaded) return 0;
     int w = 0;
     for (const char *p = s; *p; ) {
         unsigned cp;
@@ -169,7 +169,14 @@ int font_text_w(int id, const char *s, float size)
 
 int font_line_h(int id, float size)
 {
+    if (id < 0 || id >= FONT_COUNT) return (int)size;
     if (!S_faces[id].loaded) return (int)size;
     Face *f = &S_faces[id];
     return (int)((f->ascent - f->descent) * size) + 1;
+}
+
+int font_draw_string(int x, int y, const char *str, uint32_t color)
+{
+    /* canonical text-layer API: UI face at the default UI size */
+    return font_draw(FONT_UI, str, x, y, FONT_UI_SIZE, color);
 }

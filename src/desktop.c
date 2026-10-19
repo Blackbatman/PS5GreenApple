@@ -131,10 +131,14 @@ static void draw_clock(char *buf, int n)
 #else
     localtime_r(&t, &tmv);
 #endif
-    if (g_settings.seconds)
-        psa_snprintf(buf, (size_t)n, g_settings.clock24 ? "%02d:%02d:%02d" : "%02d:%02d:%02d",
-                     g_settings.clock24 ? tmv.tm_hour : (tmv.tm_hour % 12 ? tmv.tm_hour % 12 : 12),
-                     tmv.tm_min, tmv.tm_sec);
+    if (g_settings.seconds) {
+        const char *am = tmv.tm_hour < 12 ? "AM" : "PM";
+        int h = g_settings.clock24 ? tmv.tm_hour : (tmv.tm_hour % 12 ? tmv.tm_hour % 12 : 12);
+        if (g_settings.clock24)
+            psa_snprintf(buf, (size_t)n, "%02d:%02d:%02d", h, tmv.tm_min, tmv.tm_sec);
+        else
+            psa_snprintf(buf, (size_t)n, "%d:%02d:%02d %s", h, tmv.tm_min, tmv.tm_sec, am);
+    }
     else {
         const char *am = tmv.tm_hour < 12 ? "AM" : "PM";
         int h = g_settings.clock24 ? tmv.tm_hour : (tmv.tm_hour % 12 ? tmv.tm_hour % 12 : 12);
@@ -411,12 +415,12 @@ void desktop_frame(void)
     if (g_settings.fps) {
         static int frames = 0; static uint64_t last = 0;
         frames++;
-        char buf[32];
+        char buf[32] = "";   /* zero-initialized: defined read before first tick */
         if (now_ms() - last > 1000) {
             psa_snprintf(buf, sizeof(buf), "%d fps", frames);
             last = now_ms(); frames = 0;
         }
-        font_draw(FONT_MONO, buf, 20, MB_H + 12, 16, RGB(120, 255, 140));
+        font_draw(FONT_MONO, buf[0] ? buf : "...", 20, MB_H + 12, 16, RGB(120, 255, 140));
     }
 
     draw_selection_ring();

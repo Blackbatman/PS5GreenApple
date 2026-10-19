@@ -98,7 +98,6 @@ static void te_draw(Win *w)
         skip--;
     }
     int yy = y + 12;
-    int chars_shown = 0;
     for (int i = 0; i < max_lines && *p; i++) {
         const char *nl = strchr(p, '\n');
         int len = nl ? (int)(nl - p) : (int)strlen(p);
@@ -107,7 +106,6 @@ static void te_draw(Win *w)
         memcpy(linebuf, p, (size_t)len); linebuf[len] = 0;
         font_draw(FONT_MONO, linebuf, x + 14, yy, 17, RGB(225, 228, 235));
         yy += line_h;
-        chars_shown += len + 1;
         if (!nl) break;
         p = nl + 1;
     }
@@ -141,5 +139,6 @@ static void te_draw(Win *w)
 
     /* editing via OSK: buffer shared */
     if (S_te.editing && !osk_active()) S_te.editing = 0;  /* user closed keys */
-    if (S_te.dirty) S_te.dirty = 0;
+    /* dirty flag retired: OSK edits the buffer in place, save is explicit */
+    (void)S_te.dirty;
 }

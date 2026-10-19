@@ -30,7 +30,7 @@ static void toggle_row(Win *w, int id, const char *label, const char *value, int
               sel ? g_theme.accent : g_theme.text_dim);
     ui_add_hotspot(id, x, *yy, cw, rh, label);
     *yy += rh + 8;
-    if (ui_pressed(id)) settings_save();
+    /* NOTE: value mutation + settings_save() are owned by the caller */
 }
 
 static void settings_draw(Win *w)

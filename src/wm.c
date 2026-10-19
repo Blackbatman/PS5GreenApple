@@ -63,7 +63,7 @@ Win *wm_top(void)
 
 void wm_raise(Win *w)
 {
-    if (!w) return;
+    if (!w || w < S_wins || w >= S_wins + WM_MAX_WINDOWS) return;
     /* move to end of array = highest z */
     int idx = (int)(w - S_wins);
     Win tmp = S_wins[idx];

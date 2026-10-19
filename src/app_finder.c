@@ -124,7 +124,7 @@ static void finder_draw(Win *w)
         int id = 230 + i;
         int ry = list_y + i * row_h;
         int sel = (ui_sel_id() == id);
-        if (sel) gfx_round_rect(cx, ry - 4, cw, row_h - 8, 8, sel ? g_theme.row_hover : 0);
+        if (sel) gfx_round_rect(cx, ry - 4, cw, row_h - 8, 8, g_theme.row_hover);
         icons_draw_glyph(e->is_dir ? ICON_FOLDER : (strstr(e->name, ".png") || strstr(e->name, ".jpg") ? ICON_IMAGE : ICON_FILE),
                          cx + 24, ry + row_h / 2 - 2, 24,
                          e->is_dir ? g_theme.accent : g_theme.text_dim);

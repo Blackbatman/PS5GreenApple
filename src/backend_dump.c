@@ -81,7 +81,7 @@ static void load_script(const char *path)
         for (char *q = arg; *q; q++) if (*q == '\n' || *q == '\r') *q = 0;
         Cmd *c = &S_cmds[S_ncmd++];
         memset(c, 0, sizeof(*c));
-        if (!strcmp(word, "wait"))   { c->type = CMD_WAIT;  c->a = atoi(arg); }
+        if (!strcmp(word, "wait"))   { c->type = CMD_WAIT;  c->a = atoi(arg); if (c->a < 0) c->a = 0; }
         else if (!strcmp(word, "press")) { c->type = CMD_PRESS; psa_strcpy(c->s, sizeof(c->s), arg); }
         else if (!strcmp(word, "move"))  { c->type = CMD_MOVE; sscanf(arg, "%d %d", &c->a, &c->b); }
         else if (!strcmp(word, "shot"))  { c->type = CMD_SHOT; psa_strcpy(c->s, sizeof(c->s), arg); }

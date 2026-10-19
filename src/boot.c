@@ -42,8 +42,9 @@ int boot_frame(void)
     if (t > 2400 && t < 3300) {
         const char *hint = "Press X to skip";
         int alpha = (int)(110 * a);
-        font_draw(FONT_UI, hint, PSA_W / 2 - font_text_w(FONT_UI, hint, 20) / 2,
-                  PSA_H - 120, 20, mul_alpha(RGB(160, 160, 175), alpha));
+        /* canonical text-layer API (font.h contract) */
+        font_draw_string(PSA_W / 2 - font_text_w(FONT_UI, hint, FONT_UI_SIZE) / 2,
+                         PSA_H - 120, hint, mul_alpha(RGB(160, 160, 175), alpha));
     }
     return 0;
 }

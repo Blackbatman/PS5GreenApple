@@ -44,6 +44,7 @@ void gfx_pop_clip(void) { if (S_clip_n > 0) S_clip_n--; }
 void gfx_blend_pixel(int x, int y, uint32_t c)
 {
     int a = C_A(c);
+    if (!S_fb) return;
     if (x < cur_clip_x() || y < cur_clip_y() || x >= cur_clip_x2() || y >= cur_clip_y2()) return;
     if (a <= 0) return;
     if (a >= 255) { S_fb[(size_t)y * S_w + x] = c | 0xFF000000u; return; }
@@ -57,17 +58,20 @@ void gfx_blend_pixel(int x, int y, uint32_t c)
 
 void gfx_pixel(int x, int y, uint32_t c)
 {
+    if (!S_fb) return;
     if (x < cur_clip_x() || y < cur_clip_y() || x >= cur_clip_x2() || y >= cur_clip_y2()) return;
     S_fb[(size_t)y * S_w + x] = c;
 }
 
 void gfx_clear(uint32_t c)
 {
+    if (!S_fb) return;
     for (int i = 0; i < S_w * S_h; i++) S_fb[i] = c;
 }
 
 void gfx_rect(int x, int y, int w, int h, uint32_t c)
 {
+    if (!S_fb || w <= 0 || h <= 0) return;
     int x0 = x > cur_clip_x() ? x : cur_clip_x();
     int y0 = y > cur_clip_y() ? y : cur_clip_y();
     int x1 = x + w < cur_clip_x2() ? x + w : cur_clip_x2();
@@ -232,6 +236,7 @@ void gfx_vgrad(int x, int y, int w, int h, uint32_t top, uint32_t bot)
 
 void gfx_glow(int cx, int cy, float r, uint32_t c, float strength)
 {
+    if (!S_fb || r <= 0.f) return;
     int x0 = (int)(cx - r), x1 = (int)(cx + r);
     int y0 = (int)(cy - r), y1 = (int)(cy + r);
     if (x0 < 0) x0 = 0;

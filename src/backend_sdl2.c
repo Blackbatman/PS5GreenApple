@@ -144,13 +144,15 @@ void video_poll(void)
 
 void video_present(void)
 {
+    if (!S_win) return;
     if (S_own_fb && S_surf) {
         /* copy fb -> surface (handles differing formats/pitch) */
         if (SDL_MUSTLOCK(S_surf)) SDL_LockSurface(S_surf);
         uint32_t *dst = (uint32_t *)S_surf->pixels;
         int pitch = S_surf->pitch / 4;
+        int cw = (S_surf->w < PSA_W) ? S_surf->w : PSA_W;   /* never write past a surface row */
         for (int y = 0; y < PSA_H && y < S_surf->h; y++)
-            memcpy(dst + (size_t)y * pitch, S_fb + (size_t)y * PSA_W, (size_t)PSA_W * 4);
+            memcpy(dst + (size_t)y * pitch, S_fb + (size_t)y * PSA_W, (size_t)cw * 4);
         if (SDL_MUSTLOCK(S_surf)) SDL_UnlockSurface(S_surf);
     }
     SDL_UpdateWindowSurface(S_win);
