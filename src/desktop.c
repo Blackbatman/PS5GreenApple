@@ -27,10 +27,26 @@ static uint32_t *S_wall = NULL;
 static int S_wall_built = -1;
 static uint64_t S_last_activity;
 
+/* ---- interactive shell state (Windows Start menu + Linux flavors) ----
+ * Pure local UI state: every bit lives inside the sandboxed canvas and
+ * switching only re-routes the background renderer. Zero bare-metal. */
+static int S_start_menu_open = 0;    /* Windows cascading Start menu modal   */
+static int S_nobara_menu_open = 0;   /* Nobara app drawer modal              */
+static int S_linux_flavor = 1;       /* 1 = CachyOS splash, 0 = Nobara shell */
+static int S_plymouth_ticks = 0;     /* Plymouth loader animation counter    */
+static int S_last_target = -1;       /* OS-target change detector            */
+static int S_disconnect_confirm = 0; /* sandbox shutdown confirm dialog      */
+
 /* Boot Camp OS-shell target: which environment the background canvas is
  * currently simulating. Pure local UI state - switching only re-routes
  * the background renderer, nothing outside the sandbox is touched. */
 static int S_os_target = OS_TARGET_MACOS;
+
+/* Start menu item bands: label offsets inside the 300px (720p) menu panel.
+ * The last entry is the red "Disconnect Sandbox" power item. */
+static const int SM_ITEM_OFF[6] = { 20, 60, 100, 140, 180, 265 };
+/* Nobara drawer item bands inside the 330px (720p) drawer panel. */
+static const int NB_ITEM_OFF[5] = { 25, 65, 105, 145, 185 };
 
 const DockEntry g_dock[APP_COUNT + 1] = {
     { APP_FINDER,   "Finder",    ICON_FINDER },
@@ -71,10 +87,122 @@ void desktop_set_os_target(int os)
 {
     /* defensive: unknown targets fall back to the macOS shell */
     if (os < OS_TARGET_MACOS || os > OS_TARGET_LINUX) os = OS_TARGET_MACOS;
+    if (os == S_os_target) return;
     S_os_target = os;
+    /* switching environments closes every popup instantly and re-enters
+     * Linux through the Plymouth splash (authentic boot flow) */
+    S_start_menu_open = 0;
+    S_nobara_menu_open = 0;
+    S_disconnect_confirm = 0;
+    if (os == OS_TARGET_LINUX) { S_linux_flavor = 1; S_plymouth_ticks = 0; }
 }
 
 int desktop_os_target(void) { return S_os_target; }
+
+/* ---------------- shell modal controls ---------------- */
+void desktop_toggle_start_menu(void)
+{
+    S_start_menu_open = !S_start_menu_open;
+    if (S_start_menu_open) S_apple_open = 0;   /* modal hygiene: one popup at a time */
+}
+
+void desktop_toggle_nobara_menu(void)
+{
+    S_nobara_menu_open = !S_nobara_menu_open;
+}
+
+void desktop_set_linux_flavor(int flavor)
+{
+    /* defensive: anything but the explicit Nobara shell falls back to the
+     * Plymouth splash, which is the safe entry sub-mode */
+    S_linux_flavor = (flavor == 0) ? 0 : 1;
+    S_nobara_menu_open = 0;
+    if (S_linux_flavor == 1) S_plymouth_ticks = 0;
+}
+
+int desktop_get_linux_flavor(void) { return S_linux_flavor; }
+
+/* ---------------- shared shell geometry (720p reference, scaled) --------
+ * Single source of truth so the renderer, the per-frame hotspots and the
+ * pointer hit-test router can never drift apart. */
+typedef struct {
+    float s;                        /* 720p -> canvas scale factor */
+    /* Windows taskbar + cascading Start menu */
+    int tb_y, tb_h;
+    int st_x, st_y, st_w, st_h;     /* Start button */
+    int bc_x, bc_y, bc_w, bc_h;     /* taskbar Boot Camp tray button */
+    int mn_x, mn_y, mn_w, mn_h;     /* Start menu panel */
+    /* CachyOS Plymouth splash */
+    int pl_x, pl_y, pl_w, pl_h;     /* Load Nobara GUI button */
+    int pl_bm_y;                    /* Boot Manager button y */
+    /* Nobara GNOME shell */
+    int nb_panel_h;
+    int nb_apps_x, nb_apps_y, nb_apps_w, nb_apps_h;
+    int nb_sw_x, nb_sw_w;           /* CachyOS Splash switcher */
+    int nb_dr_x, nb_dr_y, nb_dr_w, nb_dr_h;
+} ShellGeo;
+
+static void shell_geo(int sw, int sh, ShellGeo *g)
+{
+    if (!g) return;                 /* defensive: null geometry sink */
+    memset(g, 0, sizeof(*g));
+    float s = (float)sh / 720.f;
+    if (s < 0.75f) s = 0.75f;       /* same clamps as the background router */
+    if (s > 2.5f) s = 2.5f;
+    g->s = s;
+
+    g->tb_h = (int)(45 * s);  g->tb_y = sh - g->tb_h;
+    g->st_w = (int)(75 * s);  g->st_h = (int)(35 * s);
+    g->st_x = (int)(5 * s);   g->st_y = sh - (int)(40 * s);
+    g->bc_w = (int)(64 * s);  g->bc_h = (int)(35 * s);
+    g->bc_x = sw - g->bc_w - (int)(150 * s);  g->bc_y = g->st_y;
+    g->mn_w = (int)(240 * s); g->mn_h = (int)(300 * s);
+    g->mn_x = (int)(5 * s);   g->mn_y = g->tb_y - g->mn_h;
+
+    g->pl_w = (int)(280 * s); g->pl_h = (int)(40 * s);
+    g->pl_x = sw / 2 - g->pl_w / 2;
+    g->pl_y = sh / 2 + (int)(100 * s);
+    g->pl_bm_y = g->pl_y + g->pl_h + (int)(14 * s);
+
+    g->nb_panel_h = (int)(35 * s);
+    g->nb_apps_w = (int)(150 * s); g->nb_apps_h = (int)(26 * s);
+    g->nb_apps_x = (int)(5 * s);   g->nb_apps_y = (int)(4 * s);
+    g->nb_sw_w = (int)(160 * s);
+    g->nb_sw_x = sw - g->nb_sw_w - (int)(12 * s);
+    g->nb_dr_w = (int)(300 * s);   g->nb_dr_h = (int)(330 * s);
+    g->nb_dr_x = (int)(5 * s);     g->nb_dr_y = g->nb_panel_h + (int)(6 * s);
+}
+
+/* flat shell button (Fluent/GNOME look): flat body, centered label, hotspot */
+static void shell_button(int id, int x, int y, int w, int h,
+                         const char *label, uint32_t bg, uint32_t hl)
+{
+    if (w <= 0 || h <= 0 || !label) return;   /* defensive geometry */
+    int sel = (ui_sel_id() == id);
+    gfx_round_rect(x, y, w, h, 8, sel ? hl : bg);
+    if (sel) gfx_round_rect_outline(x - 4, y - 4, w + 8, h + 8, 10, 2, RGB(255, 255, 255));
+    int tw = font_text_w(FONT_UI, label, 19);
+    font_draw(FONT_UI, label, x + (w - tw) / 2, y + (h - 24) / 2, 19, RGB(255, 255, 255));
+    ui_add_hotspot(id, x, y, w, h, label);
+}
+
+/* GNOME-style panel clock: weekday + 24h time */
+static void panel_clock(char *buf, int n)
+{
+    if (!buf || n <= 0) return;
+    time_t t = time(NULL);
+    struct tm tmv;
+#ifdef _WIN32
+    localtime_s(&tmv, &t);
+#else
+    localtime_r(&t, &tmv);
+#endif
+    static const char *wd[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+    psa_snprintf(buf, (size_t)n, "%s %02d:%02d",
+                 wd[tmv.tm_wday % 7], tmv.tm_hour & 0x1F, tmv.tm_min);
+}
+
+static void draw_clock(char *buf, int n);   /* forward: defined below */
 
 /* ---------------- OS background router (Boot Camp sync) ----------------
  * The desktop background canvas instantly re-styles to match the OS
@@ -91,6 +219,15 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
     if (s < 0.75f) s = 0.75f;
     if (s > 2.5f) s = 2.5f;
 
+    /* modal-state guard: switching environments closes every popup instantly
+     * and always re-enters Linux through the Plymouth splash */
+    if (active_os_target != S_last_target) {
+        S_start_menu_open = 0;
+        S_nobara_menu_open = 0;
+        if (active_os_target == OS_TARGET_LINUX) { S_linux_flavor = 1; S_plymouth_ticks = 0; }
+        S_last_target = active_os_target;
+    }
+
     switch (active_os_target) {
     case OS_TARGET_MACOS:
         /* macOS Workstation: Deep Premium Apple Obsidian theme (Aqua Slate).
@@ -102,30 +239,209 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
                          RGB(0xFF, 0xFF, 0xFF));
         break;
 
-    case OS_TARGET_WINDOWS:
-        /* Windows: Classic Midnight Teal Workstation layout (Fluent Core). */
-        gfx_clear(RGB(0x00, 0x5A, 0x5B));
-        gfx_rect(0, sh - (int)(45 * s), sw, (int)(45 * s), RGB(0x10, 0x10, 0x10)); /* taskbar */
-        gfx_rect((int)(5 * s), sh - (int)(40 * s), (int)(60 * s), (int)(35 * s),
-                 RGB(0x1F, 0x1F, 0x1F));                             /* start button */
-        font_draw_string(18, sh - (int)(28 * s), "Start", RGB(0x00, 0xFF, 0x00));
-        /* pinned Boot Camp launcher on the taskbar = permanent way back
-         * into the boot manager while a non-mac shell is active */
-        ui_add_hotspot(107, (int)(5 * s), sh - (int)(45 * s),
-                       (int)(60 * s) + 24, (int)(45 * s), "taskbar-start");
+    case OS_TARGET_WINDOWS: {
+        /* Windows: Classic Midnight Teal Workstation layout (Fluent Core).
+         * The Start button drives the cascading menu modal (drawn above the
+         * window layer by draw_start_menu) - zero-lag state toggling. */
+        ShellGeo gg;
+        shell_geo(sw, sh, &gg);
+
+        gfx_clear(RGB(0x00, 0x5A, 0x5B));   /* classic mid-teal workstation wall */
+        gfx_rect(0, gg.tb_y, sw, gg.tb_h, RGB(0x1A, 0x1A, 0x1C));    /* taskbar */
+        gfx_rect(0, gg.tb_y, sw, 1, RGB(0x3A, 0x3A, 0x3C));          /* top accent edge */
+
+        /* Start button: pressed look while the cascading menu is open */
+        gfx_rect(gg.st_x, gg.st_y, gg.st_w, gg.st_h,
+                 S_start_menu_open ? RGB(0x3A, 0x3A, 0x3C) : RGB(0x2C, 0x2C, 0x2E));
+        font_draw_string(gg.st_x + (int)(13 * gg.s), gg.st_y + (int)(11 * gg.s),
+                         "Start", RGB(0xFF, 0xFF, 0xFF));
+        ui_add_hotspot(900, gg.st_x, gg.st_y, gg.st_w, gg.st_h, "start-menu");
+
+        /* system tray: live taskbar clock + permanent Boot Camp escape hatch
+         * so the boot manager (and from it, the macOS shell) is always one
+         * click away while the Windows persona is active */
+        char clk[16];
+        draw_clock(clk, sizeof(clk));
+        int cw = font_text_w(FONT_UI, clk, 18);
+        font_draw(FONT_UI, clk, sw - cw - (int)(16 * gg.s),
+                  gg.tb_y + (gg.tb_h - 22) / 2, 18, RGB(0x8E, 0x8E, 0x93));
+        gfx_round_rect(gg.bc_x, gg.bc_y, gg.bc_w, gg.bc_h, 6, RGB(0x2C, 0x2C, 0x2E));
+        font_draw(FONT_UI, "BC", gg.bc_x + (gg.bc_w - font_text_w(FONT_UI, "BC", 18)) / 2,
+                  gg.bc_y + (gg.bc_h - 22) / 2, 18, RGB(0x9A, 0x9A, 0xA0));
+        ui_add_hotspot(907, gg.bc_x, gg.bc_y, gg.bc_w, gg.bc_h, "taskbar-bootcamp");
         break;
+    }
 
     case OS_TARGET_LINUX:
-        /* Linux: Wayland-inspired Dark Auburn core (GNOME shell). */
-        gfx_clear(RGB(0x2D, 0x09, 0x22));
-        gfx_rect(0, 0, sw, (int)(30 * s), RGB(0x11, 0x11, 0x11));   /* top panel */
-        font_draw_string(sw / 2 - 30, 8, "Activities", RGB(0xCE, 0xCE, 0xCE));
+        if (desktop_get_linux_flavor() == 1) {
+            /* -- SUB-MODE A: CachyOS / Plymouth boot splash simulation --
+             * Animated on the core render clock: the light-green tracker
+             * sweeps the loading track, then the user enters the live
+             * Nobara shell with one click. Pure canvas state, no kernel. */
+            ShellGeo gg;
+            shell_geo(sw, sh, &gg);
+            gfx_clear(RGB(0x0C, 0x0C, 0x0E));   /* deep pitch-black stealth screen */
+
+            S_plymouth_ticks += 2;
+            if (S_plymouth_ticks >= 420) S_plymouth_ticks = 0;   /* 420 % 42 == 0: seamless wrap */
+            int track_w = (int)(170 * gg.s), track_h = (int)(6 * gg.s);
+            int seg_w   = (int)(36 * gg.s);
+            int tx0 = sw / 2 - track_w / 2, ty0 = sh / 2 - (int)(20 * gg.s);
+            int off = (S_plymouth_ticks % 42) * (track_w - seg_w) / 42;
+            gfx_rect(tx0, ty0, track_w, track_h, RGB(0x1C, 0x1C, 0x1E));
+            gfx_rect(tx0 + off, ty0, seg_w, track_h, RGB(0x00, 0xFF, 0x7F));  /* Cachy light green */
+
+            const char *brand = "cachyos";
+            int bw = font_text_w(FONT_BOLD, brand, 24 * gg.s);
+            font_draw(FONT_BOLD, brand, sw / 2 - bw / 2, ty0 + (int)(26 * gg.s),
+                      24 * gg.s, RGB(0x00, 0xFF, 0x7F));
+            const char *sub = "Simulated kernel handoff... core initialization active";
+            int swd = font_text_w(FONT_UI, sub, 16 * gg.s);
+            font_draw(FONT_UI, sub, sw / 2 - swd / 2, ty0 + (int)(64 * gg.s),
+                      16 * gg.s, RGB(0x55, 0x55, 0x5A));
+
+            shell_button(910, gg.pl_x, gg.pl_y, gg.pl_w, gg.pl_h,
+                         "Load Nobara GUI", RGB(0x1C, 0x1C, 0x1E), RGB(0x00, 0x7F, 0x4F));
+            shell_button(918, gg.pl_x, gg.pl_bm_y, gg.pl_w, gg.pl_h,
+                         "Boot Manager", RGB(0x1C, 0x1C, 0x1E), RGB(0x00, 0x7F, 0x4F));
+        } else {
+            /* -- SUB-MODE B: Nobara OS GNOME gaming shell layout -- */
+            ShellGeo gg;
+            shell_geo(sw, sh, &gg);
+            gfx_clear(RGB(0x21, 0x04, 0x1B));   /* Nobara plum background */
+
+            /* top GNOME Shell panel bar */
+            gfx_rect(0, 0, sw, gg.nb_panel_h, RGB(0x11, 0x11, 0x13));
+            gfx_rect(0, gg.nb_panel_h - 1, sw, 1, RGB(0x25, 0x25, 0x28));
+
+            /* Nobara app-deck toggle (wine-red while the drawer is open) */
+            gfx_round_rect(gg.nb_apps_x, gg.nb_apps_y, gg.nb_apps_w, gg.nb_apps_h, 6,
+                           S_nobara_menu_open ? RGB(0xC1, 0x12, 0x1F) : RGB(0x2D, 0x2D, 0x30));
+            font_draw_string(gg.nb_apps_x + (int)(10 * gg.s),
+                             gg.nb_apps_y + (gg.nb_apps_h - 22) / 2 + 1,
+                             "Nobara Apps", RGB(0xFF, 0xFF, 0xFF));
+            ui_add_hotspot(911, gg.nb_apps_x, gg.nb_apps_y, gg.nb_apps_w, gg.nb_apps_h,
+                           "nobara-apps");
+
+            /* panel clock, GNOME style (weekday + 24h) */
+            char clk[24];
+            panel_clock(clk, sizeof(clk));
+            int cw = font_text_w(FONT_UI, clk, 18);
+            font_draw(FONT_UI, clk, sw / 2 - cw / 2, (gg.nb_panel_h - 22) / 2, 18,
+                      RGB(0xCE, 0xCE, 0xCE));
+
+            /* right cluster: simulated status readouts + splash quick switcher */
+            font_draw(FONT_UI, "WLAN  VOL  BAT 100%", gg.nb_sw_x - (int)(240 * gg.s),
+                      (gg.nb_panel_h - 22) / 2, 18, RGB(0x99, 0x99, 0x9F));
+            gfx_round_rect(gg.nb_sw_x, gg.nb_apps_y, gg.nb_sw_w, gg.nb_apps_h, 6,
+                           RGB(0x2D, 0x2D, 0x30));
+            font_draw_string(gg.nb_sw_x + (int)(10 * gg.s),
+                             gg.nb_apps_y + (gg.nb_apps_h - 22) / 2 + 1,
+                             "CachyOS Splash", RGB(0xFF, 0xFF, 0xFF));
+            ui_add_hotspot(912, gg.nb_sw_x, gg.nb_apps_y, gg.nb_sw_w, gg.nb_apps_h,
+                           "cachyos-splash");
+        }
         break;
 
     default:
         gfx_clear(RGB(0, 0, 0));
         break;
     }
+}
+
+/* ---------------- modal shell overlays (above the window layer) ----------
+ * The cascading Start menu and the Nobara drawer are global modals: they
+ * render on top of every open window, exactly like the native OS menus
+ * they simulate. Drawn after wm_draw_all() in desktop_frame(). */
+static void draw_start_menu(void)
+{
+    ShellGeo gg;
+    shell_geo(PSA_W, PSA_H, &gg);
+    int mx2 = gg.mn_x, my2 = gg.mn_y, mw2 = gg.mn_w, mh2 = gg.mn_h;
+
+    /* body canvas + 1px Fluent border edges (top and right) */
+    gfx_rect(mx2, my2, mw2, mh2, RGB(0x1C, 0x1C, 0x1E));
+    gfx_rect(mx2, my2, mw2, 1, RGB(0x3A, 0x3A, 0x3C));
+    gfx_rect(mx2 + mw2 - 1, my2, 1, mh2, RGB(0x3A, 0x3A, 0x3C));
+    /* left blue branding strip (classic workstation detail) */
+    gfx_rect(mx2 + 1, my2 + 1, (int)(30 * gg.s), mh2 - 2, RGB(0x0A, 0x5C, 0xFF));
+
+    static const char *items[6] = {
+        "Hardware Specs", "File Explorer", "Command Prompt",
+        "Notepad Editor", "Boot Camp Manager", "Disconnect Sandbox"
+    };
+    static const int ids[6] = { 901, 902, 903, 904, 905, 906 };
+    int band_h = (int)(34 * gg.s);
+    for (int i = 0; i < 6; i++) {
+        int by = my2 + (int)((SM_ITEM_OFF[i] - 8) * gg.s);
+        int sel = (ui_sel_id() == ids[i]);
+        if (sel)
+            gfx_rect(mx2 + (int)(32 * gg.s), by, mw2 - (int)(36 * gg.s), band_h,
+                     i == 5 ? RGB(0x7A, 0x1F, 0x1A) : RGB(0x0A, 0x5C, 0xFF));
+        font_draw_string(mx2 + (int)(45 * gg.s), by + (band_h - 22) / 2 + 1, items[i],
+                         i == 5 ? RGB(0xFF, 0x3B, 0x30) : RGB(0xFF, 0xFF, 0xFF));
+        ui_add_hotspot(ids[i], mx2 + (int)(32 * gg.s), by,
+                       mw2 - (int)(36 * gg.s), band_h, items[i]);
+    }
+    /* separator above the power item */
+    gfx_rect(mx2 + (int)(35 * gg.s), my2 + (int)(245 * gg.s),
+             mw2 - (int)(40 * gg.s), 1, RGB(0x2C, 0x2C, 0x2E));
+}
+
+static void draw_nobara_drawer(void)
+{
+    ShellGeo gg;
+    shell_geo(PSA_W, PSA_H, &gg);
+    int dx = gg.nb_dr_x, dy = gg.nb_dr_y, dw = gg.nb_dr_w, dh = gg.nb_dr_h;
+
+    /* drawer body + wine-red accent edge */
+    gfx_rect(dx, dy, dw, dh, RGB(0x18, 0x18, 0x1B));
+    gfx_rect(dx, dy, dw, 2, RGB(0xC1, 0x12, 0x1F));
+
+    static const char *items[5] = {
+        "Proton GE Runtime Engine", "Gnome Files Browser", "Bash Terminal",
+        "Nobara Tweak Utility", "Return to Boot Manager"
+    };
+    static const int ids[5] = { 913, 914, 915, 916, 917 };
+    int band_h = (int)(34 * gg.s);
+    for (int i = 0; i < 5; i++) {
+        int by = dy + (int)((NB_ITEM_OFF[i] - 8) * gg.s);
+        int sel = (ui_sel_id() == ids[i]);
+        if (sel)
+            gfx_rect(dx + (int)(8 * gg.s), by, dw - (int)(16 * gg.s), band_h,
+                     RGB(0xC1, 0x12, 0x1F));
+        font_draw_string(dx + (int)(20 * gg.s), by + (band_h - 22) / 2 + 1, items[i],
+                         RGB(0xFF, 0xFF, 0xFF));
+        ui_add_hotspot(ids[i], dx + (int)(8 * gg.s), by,
+                       dw - (int)(16 * gg.s), band_h, items[i]);
+    }
+    /* separator + sandbox status readouts (simulated, informational) */
+    gfx_rect(dx + (int)(15 * gg.s), dy + (int)(240 * gg.s),
+             dw - (int)(30 * gg.s), 1, RGB(0x2C, 0x2C, 0x30));
+    font_draw_string(dx + (int)(20 * gg.s), dy + (int)(258 * gg.s),
+                     "System Kernel: 6.x-fsync", RGB(0x00, 0xFF, 0x00));
+    font_draw_string(dx + (int)(20 * gg.s), dy + (int)(284 * gg.s),
+                     "Execution Sandbox: Secure", RGB(0x00, 0xFF, 0x00));
+}
+
+/* ---------------- sandbox shutdown confirm ----------------
+ * "Disconnect Sandbox" never exits the payload without an explicit
+ * confirmation - the same graceful path as the power dialog. */
+static void draw_disconnect_confirm(void)
+{
+    int w = 560, h = 240;
+    int x = (PSA_W - w) / 2, y = (PSA_H - h) / 2 - 60;
+    gfx_rect(0, 0, PSA_W, PSA_H, RGBA(0, 0, 0, 120));
+    gfx_round_rect(x, y, w, h, 16, RGB(40, 40, 46));
+    gfx_round_rect_outline(x, y, w, h, 16, 1, g_theme.window_border);
+    font_draw(FONT_BOLD, "Disconnect sandbox?", x + 28, y + 26, 24, g_theme.text_bright);
+    font_draw(FONT_UI, "The simulated environment will close and all in-memory", x + 28, y + 64, 19, g_theme.text_dim);
+    font_draw(FONT_UI, "state returns to the PS5 home screen. Nothing outside", x + 28, y + 88, 19, g_theme.text_dim);
+    font_draw(FONT_UI, "this sandbox is ever touched.", x + 28, y + 112, 19, g_theme.text_dim);
+    ui_button(919, x + w - 2 * 200 - 28, y + h - 76, 200, 48, "Cancel", 0);
+    ui_button(920, x + w - 200 - 28, y + h - 76, 200, 48, "Disconnect", 1);
+    if (ui_pressed(919)) S_disconnect_confirm = 0;
+    if (ui_pressed(920)) { S_disconnect_confirm = 0; desktop_begin_shutdown(); }
 }
 
 /* ---------------- wallpaper (precomputed) ---------------- */
@@ -371,6 +687,12 @@ void desktop_init(void)
     S_toast_ms = 0;
     S_wall = NULL;
     S_wall_built = -1;
+    S_start_menu_open = 0;
+    S_nobara_menu_open = 0;
+    S_linux_flavor = 1;
+    S_plymouth_ticks = 0;
+    S_last_target = -1;
+    S_disconnect_confirm = 0;
     sysinfo_mark_boot();
     boot_reset();
     wm_init();
@@ -387,7 +709,9 @@ static void handle_global_keys(void)
     }
     if (in_clicked(BTN_CIRCLE)) {
         if (S_apple_open) { S_apple_open = 0; return; }
-        if (S_power_open) { S_power_open = 0; return; }
+        if (S_disconnect_confirm) { S_disconnect_confirm = 0; return; }
+        if (S_start_menu_open) { S_start_menu_open = 0; return; }
+        if (S_nobara_menu_open) { S_nobara_menu_open = 0; return; }
         if (osk_active()) return;         /* osk handles it */
         wm_close_top();
     }
@@ -422,7 +746,28 @@ static void dispatch_action(int id)
     case 11: S_apple_open = 0; app_settings_open(); break;
     case 12: S_apple_open = 0; S_state = DS_SLEEP; break;
     case 13: S_apple_open = 0; desktop_begin_shutdown(); break;
-    case 107: desktop_open_app(APP_BOOTCAMP); break;   /* taskbar start (Windows shell) */
+    /* ---- interactive shell chrome: Windows Start menu modal ---- */
+    case 107:                                /* legacy taskbar-start id */
+    case 900: desktop_toggle_start_menu(); break;
+    case 901: S_start_menu_open = 0; app_about_open(); break;     /* Hardware Specs */
+    case 902: S_start_menu_open = 0; app_finder_open(); break;    /* File Explorer */
+    case 903: S_start_menu_open = 0; app_terminal_open(); break;  /* Command Prompt */
+    case 904: S_start_menu_open = 0; app_textedit_open(); break;  /* Notepad Editor */
+    case 905: S_start_menu_open = 0; app_bootcamp_open(); break;  /* Boot Camp Manager */
+    case 906: S_start_menu_open = 0; S_disconnect_confirm = 1; break;  /* Disconnect */
+    case 907: app_bootcamp_open(); break;     /* taskbar Boot Camp tray */
+    /* ---- interactive shell chrome: Linux dual-flavor loop ---- */
+    case 910: desktop_set_linux_flavor(0); desktop_toast("Nobara GNOME shell online"); break;
+    case 911: desktop_toggle_nobara_menu(); break;
+    case 912: desktop_set_linux_flavor(1); desktop_toast("Returning to CachyOS splash"); break;
+    case 913: S_nobara_menu_open = 0; desktop_toast("Proton GE runtime: simulated launch"); break;
+    case 914: S_nobara_menu_open = 0; app_finder_open(); break;
+    case 915: S_nobara_menu_open = 0; app_terminal_open(); break;
+    case 916: S_nobara_menu_open = 0; app_settings_open(); break;
+    case 917: S_nobara_menu_open = 0; app_bootcamp_open(); break;
+    case 918: app_bootcamp_open(); break;     /* Plymouth Boot Manager */
+    case 919: S_disconnect_confirm = 0; break;
+    case 920: S_disconnect_confirm = 0; desktop_begin_shutdown(); break;
     default: break;                       /* app-internal ids handled by apps */
     }
 }
@@ -457,13 +802,11 @@ void desktop_frame(void)
     /* ---- active desktop ---- */
     if (g_in.clicked || g_in.buttons) S_last_activity = now_ms();
 
-    /* Boot Camp guard: if the user closed every window while a foreign
-     * shell was simulated, fall back to the macOS environment so the
-     * dock (and every launch path) is always reachable again. */
-    if (S_os_target != OS_TARGET_MACOS && !wm_any_open()) {
-        S_os_target = OS_TARGET_MACOS;
-        desktop_toast("Returning to macOS Aqua Slate shell");
-    }
+    /* Foreign shells are first-class persistent environments now: the
+     * Windows taskbar carries a working Start menu and the Linux loop
+     * always keeps a Boot Manager escape hatch on screen, so every shell
+     * can reach the Boot Camp manager (and from it the macOS shell) in a
+     * single click - no automatic revert needed. */
 
     handle_global_keys();
 
@@ -483,6 +826,12 @@ void desktop_frame(void)
     wm_draw_all();
     if (S_os_target == OS_TARGET_MACOS) draw_dock();
 
+    /* modal shell overlays float above the window layer (native z-order) */
+    if (S_os_target == OS_TARGET_WINDOWS && S_start_menu_open) draw_start_menu();
+    if (S_os_target == OS_TARGET_LINUX && desktop_get_linux_flavor() == 0 &&
+        S_nobara_menu_open) draw_nobara_drawer();
+
+    if (S_disconnect_confirm) draw_disconnect_confirm();
     if (S_power_open) draw_power_dialog();
     if (osk_active()) osk_frame();
 
@@ -508,8 +857,125 @@ void desktop_frame(void)
 
     draw_selection_ring();
 
+    /* pointer click routing: DualSense touchpad tap (PS5) or host mouse.
+     * Runs after the draw pass so this frame's hotspots are live for the
+     * generic fallback path. Shell chrome is hit-tested first. */
+    if (in_clicked(BTN_TOUCHPAD) && !osk_active())
+        desktop_handle_click(g_in.mx, g_in.my);
+
     if (S_need_initial_sel) {
         ui_set_sel(100);               /* focus Finder in the dock */
         S_need_initial_sel = 0;
     }
+}
+
+/* ---------------- pointer click router (touchpad tap / host mouse) -------
+ * Coordinate hit-test against the interactive shell chrome. Mirrors the
+ * geometry tables used by the renderer through the shared shell_geo()
+ * source of truth, so render and hit-test can never drift apart.
+ * Returns 1 when the click was consumed. */
+int desktop_handle_click(int mx, int my)
+{
+    if (mx < 0 || my < 0 || mx >= PSA_W || my >= PSA_H) return 0;   /* defensive */
+    ShellGeo gg;
+    shell_geo(PSA_W, PSA_H, &gg);
+
+    if (S_os_target == OS_TARGET_WINDOWS) {
+        /* 1. Start button hit -> toggle the cascading modal */
+        if (mx >= gg.st_x && mx <= gg.st_x + gg.st_w &&
+            my >= gg.st_y && my <= gg.st_y + gg.st_h) {
+            desktop_toggle_start_menu();
+            return 1;
+        }
+        /* 2. taskbar Boot Camp tray (permanent escape hatch) */
+        if (mx >= gg.bc_x && mx <= gg.bc_x + gg.bc_w &&
+            my >= gg.bc_y && my <= gg.bc_y + gg.bc_h) {
+            app_bootcamp_open();
+            return 1;
+        }
+        /* 3. cascading menu items -> safe app dispatch */
+        if (S_start_menu_open &&
+            mx >= gg.mn_x && mx <= gg.mn_x + gg.mn_w &&
+            my >= gg.mn_y && my <= gg.mn_y + gg.mn_h) {
+            static const int ids[6] = { 901, 902, 903, 904, 905, 906 };
+            int band_h = (int)(34 * gg.s);
+            for (int i = 0; i < 6; i++) {
+                int by = gg.mn_y + (int)((SM_ITEM_OFF[i] - 8) * gg.s);
+                if (my >= by && my < by + band_h) {
+                    ui_set_sel(ids[i]);
+                    dispatch_action(ids[i]);
+                    return 1;
+                }
+            }
+            return 1;   /* click inside the menu body: absorbed, menu stays */
+        }
+        /* 4. click outside menu + taskbar: native modal dismissal */
+        if (S_start_menu_open) {
+            S_start_menu_open = 0;
+            return 1;
+        }
+    } else if (S_os_target == OS_TARGET_LINUX) {
+        if (desktop_get_linux_flavor() == 1) {
+            /* Plymouth splash: enter the Nobara shell / reach Boot Manager */
+            if (mx >= gg.pl_x && mx <= gg.pl_x + gg.pl_w) {
+                if (my >= gg.pl_y && my <= gg.pl_y + gg.pl_h) {
+                    desktop_set_linux_flavor(0);
+                    desktop_toast("Nobara GNOME shell online");
+                    return 1;
+                }
+                if (my >= gg.pl_bm_y && my <= gg.pl_bm_y + gg.pl_h) {
+                    app_bootcamp_open();
+                    return 1;
+                }
+            }
+        } else {
+            /* Nobara panel: app-deck toggle + splash quick switcher */
+            if (my >= gg.nb_apps_y && my <= gg.nb_apps_y + gg.nb_apps_h) {
+                if (mx >= gg.nb_apps_x && mx <= gg.nb_apps_x + gg.nb_apps_w) {
+                    desktop_toggle_nobara_menu();
+                    return 1;
+                }
+                if (mx >= gg.nb_sw_x && mx <= gg.nb_sw_x + gg.nb_sw_w) {
+                    desktop_set_linux_flavor(1);
+                    desktop_toast("Returning to CachyOS splash");
+                    return 1;
+                }
+            }
+            /* drawer items -> safe app dispatch */
+            if (S_nobara_menu_open &&
+                mx >= gg.nb_dr_x && mx <= gg.nb_dr_x + gg.nb_dr_w &&
+                my >= gg.nb_dr_y && my <= gg.nb_dr_y + gg.nb_dr_h) {
+                static const int ids[5] = { 913, 914, 915, 916, 917 };
+                int band_h = (int)(34 * gg.s);
+                for (int i = 0; i < 5; i++) {
+                    int by = gg.nb_dr_y + (int)((NB_ITEM_OFF[i] - 8) * gg.s);
+                    if (my >= by && my < by + band_h) {
+                        ui_set_sel(ids[i]);
+                        dispatch_action(ids[i]);
+                        return 1;
+                    }
+                }
+                return 1;   /* inside the drawer body: absorbed */
+            }
+            if (S_nobara_menu_open) { S_nobara_menu_open = 0; return 1; }
+        }
+    }
+
+    /* generic fallback: topmost hotspot under the pointer (dock, close
+     * buttons, dialogs, menu bars). Desktop-level ids dispatch immediately;
+     * app-internal ids only take focus (their owners poll ui_pressed). */
+    for (int i = ui_hotspot_count() - 1; i >= 0; i--) {
+        Hotspot *h = ui_hotspot_at(i);
+        if (!h) continue;
+        if (mx >= h->x && mx < h->x + h->w && my >= h->y && my < h->y + h->h) {
+            ui_set_sel(h->id);
+            int shell_id = (h->id >= 60 && h->id < 80) ||   /* window close   */
+                           (h->id >= 100 && h->id < 110) || /* dock           */
+                           (h->id >= 900 && h->id < 1000) ||/* shell chrome   */
+                           (h->id >= 1 && h->id <= 30);     /* menubar/dialog */
+            if (shell_id) dispatch_action(h->id);
+            return 1;
+        }
+    }
+    return 0;
 }

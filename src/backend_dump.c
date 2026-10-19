@@ -4,6 +4,7 @@
  *   wait <ms>      advance virtual time (20x real time)
  *   press <btn>    press a button (cross|circle|square|triangle|up|down|...)
  *   move <x> <y>   move pointer
+ *   click <x> <y>  pointer click at canvas coordinates (touchpad-tap path)
  *   type <text>    inject characters into the on-screen keyboard
  *   shot <name>    write outdir/<name>.png
  *   exit           finish
@@ -20,7 +21,7 @@
 
 uint64_t g_vclock = 0;
 
-enum { CMD_WAIT, CMD_PRESS, CMD_MOVE, CMD_SHOT, CMD_EXIT, CMD_TYPE, CMD_SEL };
+enum { CMD_WAIT, CMD_PRESS, CMD_MOVE, CMD_SHOT, CMD_EXIT, CMD_TYPE, CMD_SEL, CMD_CLICK };
 
 typedef struct {
     int type;
@@ -87,6 +88,7 @@ static void load_script(const char *path)
         else if (!strcmp(word, "shot"))  { c->type = CMD_SHOT; psa_strcpy(c->s, sizeof(c->s), arg); }
         else if (!strcmp(word, "type"))  { c->type = CMD_TYPE; psa_strcpy(c->s, sizeof(c->s), arg); }
         else if (!strcmp(word, "sel"))   { c->type = CMD_SEL;  c->a = atoi(arg); }
+        else if (!strcmp(word, "click")) { c->type = CMD_CLICK; sscanf(arg, "%d %d", &c->a, &c->b); }
         else if (!strcmp(word, "exit"))  { c->type = CMD_EXIT; }
         else S_ncmd--;
     }
@@ -167,6 +169,17 @@ static void exec_frame(void)
     case CMD_SEL:
         ui_set_sel(c->a);
         S_cur++; S_cmd_start = g_vclock;
+        break;
+    case CMD_CLICK:
+        /* pointer click: position + touchpad button edge (2-frame hold,
+         * same pattern as CMD_PRESS so the rising edge registers) */
+        if (S_press_hold == 0) {
+            g_in.mx = c->a; g_in.my = c->b;
+            g_in.buttons = BTN_TOUCHPAD;
+            S_press_hold = 2;
+        } else {
+            S_cur++; S_cmd_start = g_vclock;
+        }
         break;
     case CMD_EXIT:
         S_should_close = 1;

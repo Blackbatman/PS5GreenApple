@@ -23,4 +23,23 @@ void desktop_set_os_target(int os);
 int  desktop_os_target(void);
 void desktop_render_background(int active_os_target, int screen_width, int screen_height);
 
+/* Windows persona: the Start button toggles a cascading popup rendered as a
+ * global modal above the window layer. Items dispatch the existing apps
+ * (Hardware Specs / File Explorer / Command Prompt / Notepad / Boot Camp)
+ * and a safe, sandboxed shutdown sequence ("Disconnect Sandbox"). */
+void desktop_toggle_start_menu(void);
+
+/* Linux persona is dual-flavor: 1 = CachyOS Plymouth boot splash (animated),
+ * 0 = Nobara GNOME shell with its own app drawer. Entering Linux always
+ * lands on the splash first, like a real distro boot. */
+void desktop_toggle_nobara_menu(void);
+void desktop_set_linux_flavor(int flavor);
+int  desktop_get_linux_flavor(void);
+
+/* Pointer click router (DualSense touchpad tap on PS5, host mouse):
+ * coordinate hit-test against the shell chrome - Start button, cascading
+ * menu items, Plymouth buttons, Nobara drawer - then against any hotspot
+ * under the pointer. Returns 1 when the click was consumed. */
+int  desktop_handle_click(int mx, int my);
+
 #endif

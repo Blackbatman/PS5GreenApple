@@ -1,72 +1,124 @@
-# Theme-sync + telemetry verification script (Tweak 1/2 features).
-# Theme transforms are exercised in foreign-shell mode; the telemetry
-# flow runs in macOS mode (dock visible -> About reachable by sel).
-# Hotspots: dock 103=BootCamp 105=About | bootcamp 702/703/704
-# about 502=Cluster Telemetry | close = 60+win (66 BC, 67 WinShell,
-# 68 LinuxShell, 64 About, 70 Telemetry)
+# Interactive-shell verification: Windows Start menu modal + Linux dual
+# flavor (CachyOS Plymouth splash -> Nobara GNOME) + coordinate click routing.
+#
+# Hotspot map: dock 103=BootCamp 105=About | bootcamp 702/703/704
+#   windows: 900=Start 907=BC tray | start menu 901-906 (906=Disconnect)
+#   plymouth: 910=Load Nobara 918=Boot Mgr | nobara: 911=Apps 912=Splash 913-917
+#   about 502=Cluster Telemetry | close = 60+win (62 Terminal, 64 About,
+#   66 BC, 67 WinShell preview, 68 LinShell preview, 70 Telemetry)
+# `click x y` exercises the pointer router (desktop_handle_click) directly:
+#   1080p geometry: Start btn ~(60,1046) | menu items x=200, item y 600/720/850
+#   Plymouth Load-Nobara (960,720) | Nobara Apps (100,25) | drawer item 5 (200,355)
 
 wait 3600
 
-# ---- T1: open Boot Camp, hand off to Windows shell ----
+# ---- Windows persona: shell persists after closing the preview ----
 sel 103
 press cross
 wait 400
-shot t01-bootcamp
+shot s01-bootcamp
 sel 702
 press cross
 wait 400
-shot t02-windows-theme
-
-# ---- auto-revert: close everything -> macOS returns ----
+shot s02-windows-shell
 sel 67
 press cross
 wait 300
+shot s03-windows-persistent
+
+# ---- Start menu: open by coordinate click, dispatch Command Prompt ----
+click 60 1046
+wait 300
+shot s04-start-menu
+click 200 720
+wait 400
+shot s05-start-dispatch-terminal
+sel 62
+press cross
+wait 300
+
+# ---- Start menu: Boot Camp Manager item (controller path) ----
+sel 900
+press cross
+wait 200
+sel 905
+press cross
+wait 400
+shot s06-start-bootcamp
 sel 66
 press cross
-wait 400
-shot t03-autorevert-macos
+wait 300
 
-# ---- T1: Linux Wayland Matrix theme ----
-sel 103
+# ---- Start menu: Disconnect Sandbox -> confirm -> cancel ----
+sel 900
 press cross
+wait 200
+sel 906
+press cross
+wait 300
+shot s07-sandbox-confirm
+sel 919
+press cross
+wait 200
+sel 900
+press cross
+wait 200
+
+# ---- BC tray escape hatch (coordinate click) ----
+click 1640 1046
 wait 400
+shot s08-bc-from-tray
+
+# ---- Linux persona: Plymouth splash first (authentic boot flow) ----
 sel 703
 press cross
 wait 400
-shot t04-linux-theme
+sel 66
+press cross
+wait 300
+shot s09-plymouth-behind-preview
 sel 68
 press cross
 wait 300
+shot s10-plymouth-splash
+wait 2200
+shot s11-plymouth-animated
 
-# ---- restore macOS via the Boot Camp control ----
+# ---- Plymouth -> Nobara (coordinate click), drawer + Boot Manager ----
+click 960 720
+wait 400
+shot s12-nobara-shell
+click 100 25
+wait 300
+shot s13-nobara-drawer
+click 200 355
+wait 400
+shot s14-nobara-to-bootcamp
 sel 704
 press cross
 wait 400
-shot t05-restore-mac
+shot s15-restore-mac
 sel 66
 press cross
 wait 300
 
-# ---- T2: telemetry dashboard open + rolling values (macOS mode) ----
+# ---- telemetry regression (macOS mode, unchanged behavior) ----
 sel 105
 press cross
 wait 400
-shot t06-about-buttons
 sel 502
 press cross
 wait 400
-shot t07-telemetry
+shot s16-telemetry
 wait 6000
-shot t08-telemetry-rolling
-
-# ---- lifecycle: close + reopen (buffer freed, then lazy re-init) ----
+shot s17-telemetry-rolling
 sel 70
 press cross
 wait 300
 sel 502
 press cross
 wait 300
-shot t09-telemetry-reopen
+shot s18-telemetry-reopen
 sel 70
 press cross
 wait 200

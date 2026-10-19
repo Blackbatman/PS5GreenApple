@@ -15,6 +15,7 @@ static int S_own_fb = 0;      /* host fallback when surface format differs */
 static uint32_t *S_fb;
 static int S_should_close = 0;
 static SDL_GameController *S_pad;
+static int S_mouse_down = 0;      /* host mouse left button = touchpad click */
 
 static int btn_map(int b)
 {
@@ -90,15 +91,18 @@ static void poll_pad(void)
             /* triggers as buttons */
             if (SDL_GameControllerGetAxis(S_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  > 12000) mask |= BTN_L2;
             if (SDL_GameControllerGetAxis(S_pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 12000) mask |= BTN_R2;
-            /* left stick moves the pointer (informational) */
-            static int mx = PSA_W / 2, my = PSA_H / 2;
+            /* left stick nudges the pointer. Touch/mouse sources write
+             * g_in.mx/my directly in video_poll() and take precedence:
+             * the stick only moves the pointer while actually deflected,
+             * and always continues from wherever the pointer currently is. */
             int lx = SDL_GameControllerGetAxis(S_pad, SDL_CONTROLLER_AXIS_LEFTX);
             int ly = SDL_GameControllerGetAxis(S_pad, SDL_CONTROLLER_AXIS_LEFTY);
-            mx += abs(lx) > 4000 ? lx / 12000 : 0;
-            my += abs(ly) > 4000 ? ly / 12000 : 0;
-            if (mx < 0) mx = 0; if (mx >= PSA_W) mx = PSA_W - 1;
-            if (my < 0) my = 0; if (my >= PSA_H) my = PSA_H - 1;
-            g_in.mx = mx; g_in.my = my;
+            if (abs(lx) > 4000 || abs(ly) > 4000) {
+                int px = g_in.mx + lx / 12000, py = g_in.my + ly / 12000;
+                if (px < 0) px = 0; if (px >= PSA_W) px = PSA_W - 1;
+                if (py < 0) py = 0; if (py >= PSA_H) py = PSA_H - 1;
+                g_in.mx = px; g_in.my = py;
+            }
         }
     }
     g_in.buttons = mask;
@@ -137,10 +141,34 @@ void video_poll(void)
             mask |= b;
             break;
         }
+        case SDL_MOUSEMOTION:
+            /* host mouse drives the pointer (development convenience; on
+             * PS5 only the DualSense touchpad / left stick are present) */
+            g_in.mx = ev.motion.x; g_in.my = ev.motion.y;
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+            if (ev.button.button == SDL_BUTTON_LEFT) S_mouse_down = 1;
+            break;
+        case SDL_MOUSEBUTTONUP:
+            if (ev.button.button == SDL_BUTTON_LEFT) S_mouse_down = 0;
+            break;
+        case SDL_CONTROLLERTOUCHPADDOWN:
+        case SDL_CONTROLLERTOUCHPADMOTION:
+            /* DualSense finger position drives the pointer: 0..1 -> canvas.
+             * A tap then lands as BTN_TOUCHPAD, which routes through the
+             * desktop coordinate click handler (desktop_handle_click). */
+            {
+                int tx = (int)(ev.tfinger.x * PSA_W), ty = (int)(ev.tfinger.y * PSA_H);
+                if (tx < 0) tx = 0; if (tx >= PSA_W) tx = PSA_W - 1;
+                if (ty < 0) ty = 0; if (ty >= PSA_H) ty = PSA_H - 1;
+                g_in.mx = tx; g_in.my = ty;
+            }
+            break;
         default: break;
         }
     }
     poll_pad();
+    if (S_mouse_down) mask |= BTN_TOUCHPAD;   /* host mouse = touchpad click */
     mask |= g_in.buttons;
 
     g_in.prev = prev;

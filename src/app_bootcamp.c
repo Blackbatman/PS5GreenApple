@@ -161,11 +161,11 @@ static void bc_draw(Win *w)
     }
 
     yy += 62;
-    font_draw(FONT_UI, "Boot Camp reuses the real OS shell renderers: each preview uses its native",
+    font_draw(FONT_UI, "Boot Camp reuses the real OS shell renderers and syncs the whole desktop",
               x, yy, 15, g_theme.text_dim);
-    font_draw(FONT_UI, "window chrome and syncs the whole desktop background to that OS theme",
+    font_draw(FONT_UI, "background in a single frame. Foreign shells stay interactive: the Windows",
               x, yy + 20, 15, g_theme.text_dim);
-    font_draw(FONT_UI, "(Aqua Slate / Fluent Core / Wayland Matrix) in a single frame.",
+    font_draw(FONT_UI, "taskbar runs a cascading Start menu, Linux boots through a CachyOS splash.",
               x, yy + 40, 15, g_theme.text_dim);
 }
 
