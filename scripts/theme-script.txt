@@ -7,8 +7,10 @@
 #   about 502=Cluster Telemetry | close = 60+win (62 Terminal, 64 About,
 #   66 BC, 67 WinShell preview, 68 LinShell preview, 70 Telemetry)
 # `click x y` exercises the pointer router (desktop_handle_click) directly:
-#   1080p geometry: Start btn ~(60,1046) | menu items x=200, item y 600/720/850
-#   Plymouth Load-Nobara (960,720) | Nobara Apps (100,25) | drawer item 5 (200,355)
+#   1080p geometry: Start btn ~(60,1046) | two-column menu (690x480 @ 7.5,540):
+#     Column A track x=200, bands y 620/660/700/740/780 | power row (200,990)
+#     Column B decorative absorb check (500,620) | Plymouth (960,720)
+#     Nobara Apps (100,25) | drawer item 5 (200,355)
 
 wait 3600
 
@@ -30,12 +32,29 @@ shot s03-windows-persistent
 click 60 1046
 wait 300
 shot s04-start-menu
-click 200 720
+click 200 700
 wait 400
 shot s05-start-dispatch-terminal
 sel 62
 press cross
 wait 300
+
+# ---- Start menu: Notepad Editor row + Column B absorb (menu must stay) ----
+click 60 1046
+wait 300
+click 200 740
+wait 400
+shot s05b-start-notepad
+sel 63
+press cross
+wait 300
+click 60 1046
+wait 300
+click 500 620
+wait 300
+shot s05c-colb-absorb
+click 60 1046
+wait 200
 
 # ---- Start menu: Boot Camp Manager item (controller path) ----
 sel 900

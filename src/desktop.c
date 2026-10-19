@@ -42,10 +42,15 @@ static int S_disconnect_confirm = 0; /* sandbox shutdown confirm dialog      */
  * the background renderer, nothing outside the sandbox is touched. */
 static int S_os_target = OS_TARGET_MACOS;
 
-/* Start menu item bands: label offsets inside the 300px (720p) menu panel.
- * The last entry is the red "Disconnect Sandbox" power item. */
-static const int SM_ITEM_OFF[6] = { 20, 60, 100, 140, 180, 265 };
-/* Nobara drawer item bands inside the 330px (720p) drawer panel. */
+/* Start menu item bands (720p reference, "900-series pixel-flow" matrix):
+ * label offsets inside the expanded 460x320 two-column menu panel. Offsets
+ * 50..154 are the Column A "Pinned Applications" cells (26px pitch), 295 is
+ * the red "Disconnect Sandbox" power row below the dashboard divider. */
+static const int SM_ITEM_OFF[6] = { 50, 76, 102, 128, 154, 295 };
+#define SM_COL_X   40    /* Column A text/track x inside the menu (720p)   */
+#define SM_COL_W   180   /* Column A collision-track width (720p)          */
+#define SM_COLB_X  245   /* Column B "Recent Workspaces" panel x (720p)    */
+/* Nobara drawer item bands inside the 320px (720p) drawer panel. */
 static const int NB_ITEM_OFF[5] = { 25, 65, 105, 145, 185 };
 
 const DockEntry g_dock[APP_COUNT + 1] = {
@@ -151,12 +156,15 @@ static void shell_geo(int sw, int sh, ShellGeo *g)
     if (s > 2.5f) s = 2.5f;
     g->s = s;
 
-    g->tb_h = (int)(45 * s);  g->tb_y = sh - g->tb_h;
-    g->st_w = (int)(75 * s);  g->st_h = (int)(35 * s);
-    g->st_x = (int)(5 * s);   g->st_y = sh - (int)(40 * s);
-    g->bc_w = (int)(64 * s);  g->bc_h = (int)(35 * s);
+    /* Advanced taskbar matrix: sleek 40px bar, 80x32 Start cell inset 4px
+     * from the bar edges (perfect 900-series pixel-flow coordinates) */
+    g->tb_h = (int)(40 * s);  g->tb_y = sh - g->tb_h;
+    g->st_w = (int)(80 * s);  g->st_h = (int)(32 * s);
+    g->st_x = (int)(5 * s);   g->st_y = sh - (int)(36 * s);
+    g->bc_w = (int)(64 * s);  g->bc_h = (int)(32 * s);
     g->bc_x = sw - g->bc_w - (int)(150 * s);  g->bc_y = g->st_y;
-    g->mn_w = (int)(240 * s); g->mn_h = (int)(300 * s);
+    /* expanded two-column cascading menu housing */
+    g->mn_w = (int)(460 * s); g->mn_h = (int)(320 * s);
     g->mn_x = (int)(5 * s);   g->mn_y = g->tb_y - g->mn_h;
 
     g->pl_w = (int)(280 * s); g->pl_h = (int)(40 * s);
@@ -165,12 +173,12 @@ static void shell_geo(int sw, int sh, ShellGeo *g)
     g->pl_bm_y = g->pl_y + g->pl_h + (int)(14 * s);
 
     g->nb_panel_h = (int)(35 * s);
-    g->nb_apps_w = (int)(150 * s); g->nb_apps_h = (int)(26 * s);
+    g->nb_apps_w = (int)(110 * s); g->nb_apps_h = (int)(26 * s);
     g->nb_apps_x = (int)(5 * s);   g->nb_apps_y = (int)(4 * s);
-    g->nb_sw_w = (int)(160 * s);
-    g->nb_sw_x = sw - g->nb_sw_w - (int)(12 * s);
-    g->nb_dr_w = (int)(300 * s);   g->nb_dr_h = (int)(330 * s);
-    g->nb_dr_x = (int)(5 * s);     g->nb_dr_y = g->nb_panel_h + (int)(6 * s);
+    g->nb_sw_w = (int)(120 * s);
+    g->nb_sw_x = sw - (int)(280 * s);
+    g->nb_dr_w = (int)(260 * s);   g->nb_dr_h = (int)(320 * s);
+    g->nb_dr_x = (int)(5 * s);     g->nb_dr_y = g->nb_panel_h + (int)(3 * s);
 }
 
 /* flat shell button (Fluent/GNOME look): flat body, centered label, hotspot */
@@ -240,20 +248,22 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
         break;
 
     case OS_TARGET_WINDOWS: {
-        /* Windows: Classic Midnight Teal Workstation layout (Fluent Core).
-         * The Start button drives the cascading menu modal (drawn above the
-         * window layer by draw_start_menu) - zero-lag state toggling. */
+        /* Windows: Classic Midnight Teal Workstation layout (Fluent Core),
+         * obsidian-charcoal taskbar & spacing refinement. The Start button
+         * drives the cascading menu modal (drawn above the window layer by
+         * draw_start_menu) - zero-lag state toggling. */
         ShellGeo gg;
         shell_geo(sw, sh, &gg);
 
         gfx_clear(RGB(0x00, 0x5A, 0x5B));   /* classic mid-teal workstation wall */
-        gfx_rect(0, gg.tb_y, sw, gg.tb_h, RGB(0x1A, 0x1A, 0x1C));    /* taskbar */
-        gfx_rect(0, gg.tb_y, sw, 1, RGB(0x3A, 0x3A, 0x3C));          /* top accent edge */
+        gfx_rect(0, gg.tb_y, sw, gg.tb_h, RGB(0x10, 0x10, 0x12));    /* sleek taskbar */
+        gfx_rect(0, gg.tb_y, sw, 1, RGB(0x2C, 0x2C, 0x2E));          /* high-contrast accent border */
 
         /* Start button: pressed look while the cascading menu is open */
         gfx_rect(gg.st_x, gg.st_y, gg.st_w, gg.st_h,
-                 S_start_menu_open ? RGB(0x3A, 0x3A, 0x3C) : RGB(0x2C, 0x2C, 0x2E));
-        font_draw_string(gg.st_x + (int)(13 * gg.s), gg.st_y + (int)(11 * gg.s),
+                 S_start_menu_open ? RGB(0x2C, 0x2C, 0x2E) : RGB(0x1C, 0x1C, 0x1E));
+        font_draw_string(gg.st_x + (int)(13 * gg.s),
+                         gg.st_y + (gg.st_h - 22) / 2 + 1,
                          "Start", RGB(0xFF, 0xFF, 0xFF));
         ui_add_hotspot(900, gg.st_x, gg.st_y, gg.st_w, gg.st_h, "start-menu");
 
@@ -295,7 +305,7 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
             int bw = font_text_w(FONT_BOLD, brand, 24 * gg.s);
             font_draw(FONT_BOLD, brand, sw / 2 - bw / 2, ty0 + (int)(26 * gg.s),
                       24 * gg.s, RGB(0x00, 0xFF, 0x7F));
-            const char *sub = "Simulated kernel handoff... core initialization active";
+            const char *sub = "Bypassing Hypervisor Security... Core Initialization Active";
             int swd = font_text_w(FONT_UI, sub, 16 * gg.s);
             font_draw(FONT_UI, sub, sw / 2 - swd / 2, ty0 + (int)(64 * gg.s),
                       16 * gg.s, RGB(0x55, 0x55, 0x5A));
@@ -330,8 +340,12 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
             font_draw(FONT_UI, clk, sw / 2 - cw / 2, (gg.nb_panel_h - 22) / 2, 18,
                       RGB(0xCE, 0xCE, 0xCE));
 
-            /* right cluster: simulated status readouts + splash quick switcher */
-            font_draw(FONT_UI, "WLAN  VOL  BAT 100%", gg.nb_sw_x - (int)(240 * gg.s),
+            /* right cluster: simulated status readouts + splash quick switcher.
+             * The readout is right-aligned against the switcher (12px gap) so
+             * the cluster can never overlap or clip at any canvas width. */
+            const char *stat = "WLAN  VOL  BAT 100%";
+            int stw = font_text_w(FONT_UI, stat, 18);
+            font_draw(FONT_UI, stat, gg.nb_sw_x - stw - (int)(12 * gg.s),
                       (gg.nb_panel_h - 22) / 2, 18, RGB(0x99, 0x99, 0x9F));
             gfx_round_rect(gg.nb_sw_x, gg.nb_apps_y, gg.nb_sw_w, gg.nb_apps_h, 6,
                            RGB(0x2D, 0x2D, 0x30));
@@ -353,39 +367,85 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
  * The cascading Start menu and the Nobara drawer are global modals: they
  * render on top of every open window, exactly like the native OS menus
  * they simulate. Drawn after wm_draw_all() in desktop_frame(). */
+
+/* Single source of truth for Start-menu item collision bands: the renderer,
+ * the per-frame hotspots and the pointer router all derive their rectangles
+ * from this helper, so hit-test and pixels can never drift apart. */
+static void sm_band_rect(const ShellGeo *gg, int i, int *bx, int *by, int *bw, int *bh)
+{
+    if (!gg || !bx || !by || !bw || !bh) return;   /* defensive */
+    *bx = gg->mn_x + (int)(SM_COL_X * gg->s);
+    *by = gg->mn_y + (int)((SM_ITEM_OFF[i] - 8) * gg->s);
+    *bh = (int)(26 * gg->s);
+    /* the power row spans the full lower dashboard panel; app rows are
+     * confined to the Column A collision track */
+    *bw = (i == 5) ? gg->mn_w - (int)((SM_COL_X + 45) * gg->s)
+                   : (int)(SM_COL_W * gg->s);
+}
+
 static void draw_start_menu(void)
 {
     ShellGeo gg;
     shell_geo(PSA_W, PSA_H, &gg);
     int mx2 = gg.mn_x, my2 = gg.mn_y, mw2 = gg.mn_w, mh2 = gg.mn_h;
 
-    /* body canvas + 1px Fluent border edges (top and right) */
-    gfx_rect(mx2, my2, mw2, mh2, RGB(0x1C, 0x1C, 0x1E));
-    gfx_rect(mx2, my2, mw2, 1, RGB(0x3A, 0x3A, 0x3C));
-    gfx_rect(mx2 + mw2 - 1, my2, 1, mh2, RGB(0x3A, 0x3A, 0x3C));
-    /* left blue branding strip (classic workstation detail) */
-    gfx_rect(mx2 + 1, my2 + 1, (int)(30 * gg.s), mh2 - 2, RGB(0x0A, 0x5C, 0xFF));
+    /* main menu backdrop housing + 1px Fluent border accents (top, right) */
+    gfx_rect(mx2, my2, mw2, mh2, RGB(0x1C, 0x1C, 0x1F));
+    gfx_rect(mx2, my2, mw2, 1, RGB(0x32, 0x32, 0x36));
+    gfx_rect(mx2 + mw2 - 1, my2, 1, mh2, RGB(0x32, 0x32, 0x36));
+    /* left branding strip (classic workstation accent) */
+    gfx_rect(mx2 + 1, my2 + 1, (int)(28 * gg.s), mh2 - 2, RGB(0x0A, 0x5C, 0xFF));
+
+    /* ---- COLUMN A: pinned system applications & utilities ---- */
+    font_draw(FONT_UI, "Pinned Applications", mx2 + (int)(SM_COL_X * gg.s),
+              my2 + (int)(20 * gg.s), 18, RGB(0x8E, 0x8E, 0x93));
+    gfx_rect(mx2 + (int)(SM_COL_X * gg.s), my2 + (int)(35 * gg.s),
+             (int)(SM_COL_W * gg.s), 1, RGB(0x2C, 0x2C, 0x2E));
 
     static const char *items[6] = {
-        "Hardware Specs", "File Explorer", "Command Prompt",
-        "Notepad Editor", "Boot Camp Manager", "Disconnect Sandbox"
+        "System Specs", "File Explorer", "Command Prompt",
+        "Notepad Editor", "Boot Camp Manager", "Disconnect Sandboxed Context Session"
     };
+    static const char *hints[6] = { "info", "find", "term", "edit", "", "" };
     static const int ids[6] = { 901, 902, 903, 904, 905, 906 };
-    int band_h = (int)(34 * gg.s);
     for (int i = 0; i < 6; i++) {
-        int by = my2 + (int)((SM_ITEM_OFF[i] - 8) * gg.s);
+        int bx, by, bw, bh;
+        sm_band_rect(&gg, i, &bx, &by, &bw, &bh);
         int sel = (ui_sel_id() == ids[i]);
         if (sel)
-            gfx_rect(mx2 + (int)(32 * gg.s), by, mw2 - (int)(36 * gg.s), band_h,
+            gfx_rect(bx, by, bw, bh,
                      i == 5 ? RGB(0x7A, 0x1F, 0x1A) : RGB(0x0A, 0x5C, 0xFF));
-        font_draw_string(mx2 + (int)(45 * gg.s), by + (band_h - 22) / 2 + 1, items[i],
+        font_draw_string(bx + (int)(5 * gg.s), by + (bh - 22) / 2 + 1, items[i],
                          i == 5 ? RGB(0xFF, 0x3B, 0x30) : RGB(0xFF, 0xFF, 0xFF));
-        ui_add_hotspot(ids[i], mx2 + (int)(32 * gg.s), by,
-                       mw2 - (int)(36 * gg.s), band_h, items[i]);
+        /* right-aligned shortcut hint inside the cell (never overlaps) */
+        if (hints[i][0]) {
+            int lw = font_text_w(FONT_UI, items[i], 20);
+            int hw = font_text_w(FONT_UI, hints[i], 16);
+            if (lw + hw + (int)(16 * gg.s) <= bw)
+                font_draw(FONT_UI, hints[i], bx + bw - hw - (int)(8 * gg.s),
+                          by + (bh - 18) / 2, 16, RGB(0x8E, 0x8E, 0x93));
+        }
+        ui_add_hotspot(ids[i], bx, by, bw, bh, items[i]);
     }
-    /* separator above the power item */
-    gfx_rect(mx2 + (int)(35 * gg.s), my2 + (int)(245 * gg.s),
-             mw2 - (int)(40 * gg.s), 1, RGB(0x2C, 0x2C, 0x2E));
+
+    /* ---- COLUMN B: emulated recent-documents sub-panel (decorative) ---- */
+    int cbx = mx2 + (int)(SM_COLB_X * gg.s);
+    gfx_rect(cbx - (int)(10 * gg.s), my2 + (int)(15 * gg.s), 1,
+             mh2 - (int)(60 * gg.s), RGB(0x2C, 0x2C, 0x2E));   /* column separator */
+    font_draw(FONT_UI, "Recent Workspaces", cbx, my2 + (int)(20 * gg.s), 18,
+              RGB(0x8E, 0x8E, 0x93));
+    gfx_rect(cbx, my2 + (int)(35 * gg.s), (int)(190 * gg.s), 1, RGB(0x2C, 0x2C, 0x2E));
+    static const char *docs[4] = {
+        "ps5greenapple/boot.c", "ps5greenapple/wm.c",
+        "assets/fonts/config", "docs/ARCHITECTURE.md"
+    };
+    for (int d = 0; d < 4; d++)
+        font_draw(FONT_UI, docs[d], cbx, my2 + (int)((50 + 26 * d) * gg.s), 18,
+                  RGB(0xCE, 0xCE, 0xCE));
+
+    /* lower dashboard panel action control: divider + sandbox power row */
+    gfx_rect(mx2 + (int)(35 * gg.s), my2 + (int)(275 * gg.s),
+             mw2 - (int)(45 * gg.s), 1, RGB(0x2C, 0x2C, 0x2E));
 }
 
 static void draw_nobara_drawer(void)
@@ -403,7 +463,7 @@ static void draw_nobara_drawer(void)
         "Nobara Tweak Utility", "Return to Boot Manager"
     };
     static const int ids[5] = { 913, 914, 915, 916, 917 };
-    int band_h = (int)(34 * gg.s);
+    int band_h = (int)(26 * gg.s);   /* same 26px cell pitch as the Start menu */
     for (int i = 0; i < 5; i++) {
         int by = dy + (int)((NB_ITEM_OFF[i] - 8) * gg.s);
         int sel = (ui_sel_id() == ids[i]);
@@ -418,9 +478,9 @@ static void draw_nobara_drawer(void)
     /* separator + sandbox status readouts (simulated, informational) */
     gfx_rect(dx + (int)(15 * gg.s), dy + (int)(240 * gg.s),
              dw - (int)(30 * gg.s), 1, RGB(0x2C, 0x2C, 0x30));
-    font_draw_string(dx + (int)(20 * gg.s), dy + (int)(258 * gg.s),
+    font_draw_string(dx + (int)(20 * gg.s), dy + (int)(260 * gg.s),
                      "System Kernel: 6.x-fsync", RGB(0x00, 0xFF, 0x00));
-    font_draw_string(dx + (int)(20 * gg.s), dy + (int)(284 * gg.s),
+    font_draw_string(dx + (int)(20 * gg.s), dy + (int)(285 * gg.s),
                      "Execution Sandbox: Secure", RGB(0x00, 0xFF, 0x00));
 }
 
@@ -749,7 +809,7 @@ static void dispatch_action(int id)
     /* ---- interactive shell chrome: Windows Start menu modal ---- */
     case 107:                                /* legacy taskbar-start id */
     case 900: desktop_toggle_start_menu(); break;
-    case 901: S_start_menu_open = 0; app_about_open(); break;     /* Hardware Specs */
+    case 901: S_start_menu_open = 0; app_about_open(); break;     /* System Specs */
     case 902: S_start_menu_open = 0; app_finder_open(); break;    /* File Explorer */
     case 903: S_start_menu_open = 0; app_terminal_open(); break;  /* Command Prompt */
     case 904: S_start_menu_open = 0; app_textedit_open(); break;  /* Notepad Editor */
@@ -893,15 +953,20 @@ int desktop_handle_click(int mx, int my)
             app_bootcamp_open();
             return 1;
         }
-        /* 3. cascading menu items -> safe app dispatch */
+        /* 3. cascading menu items -> safe app dispatch. Multi-column input
+         *    collision: Column A app rows respond inside their 180px (720p)
+         *    collision track via the shared sm_band_rect() source of truth;
+         *    the power row spans the full lower dashboard panel. Clicks
+         *    landing in Column B ("Recent Workspaces") are absorbed by the
+         *    menu body without closing it - instant, zero render overhead. */
         if (S_start_menu_open &&
             mx >= gg.mn_x && mx <= gg.mn_x + gg.mn_w &&
             my >= gg.mn_y && my <= gg.mn_y + gg.mn_h) {
             static const int ids[6] = { 901, 902, 903, 904, 905, 906 };
-            int band_h = (int)(34 * gg.s);
             for (int i = 0; i < 6; i++) {
-                int by = gg.mn_y + (int)((SM_ITEM_OFF[i] - 8) * gg.s);
-                if (my >= by && my < by + band_h) {
+                int bx, by, bw, bh;
+                sm_band_rect(&gg, i, &bx, &by, &bw, &bh);
+                if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) {
                     ui_set_sel(ids[i]);
                     dispatch_action(ids[i]);
                     return 1;

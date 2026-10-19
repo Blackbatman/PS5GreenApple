@@ -23,10 +23,11 @@ void desktop_set_os_target(int os);
 int  desktop_os_target(void);
 void desktop_render_background(int active_os_target, int screen_width, int screen_height);
 
-/* Windows persona: the Start button toggles a cascading popup rendered as a
- * global modal above the window layer. Items dispatch the existing apps
- * (Hardware Specs / File Explorer / Command Prompt / Notepad / Boot Camp)
- * and a safe, sandboxed shutdown sequence ("Disconnect Sandbox"). */
+/* Windows persona: the Start button toggles an expanded two-column cascading
+ * popup rendered as a global modal above the window layer. Column A pins the
+ * existing apps (System Specs / File Explorer / Command Prompt / Notepad /
+ * Boot Camp), Column B mirrors recent workspaces, and the lower dashboard
+ * row carries a safe, sandboxed shutdown sequence ("Disconnect Sandbox"). */
 void desktop_toggle_start_menu(void);
 
 /* Linux persona is dual-flavor: 1 = CachyOS Plymouth boot splash (animated),
