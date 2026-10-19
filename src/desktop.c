@@ -50,8 +50,82 @@ static const int SM_ITEM_OFF[6] = { 50, 76, 102, 128, 154, 295 };
 #define SM_COL_X   40    /* Column A text/track x inside the menu (720p)   */
 #define SM_COL_W   180   /* Column A collision-track width (720p)          */
 #define SM_COLB_X  245   /* Column B "Recent Workspaces" panel x (720p)    */
+/* Column B workspace rows share the 26px cell pitch. */
+static const int WS_ITEM_OFF[4] = { 50, 76, 102, 128 };
 /* Nobara drawer item bands inside the 320px (720p) drawer panel. */
 static const int NB_ITEM_OFF[5] = { 25, 65, 105, 145, 185 };
+
+/* Recent Workspaces: read-only in-memory snapshots opened in TextEdit.
+ * Pure simulated content - no disk reads, no filesystem paths, zero
+ * bare-metal: the entries are canvas persona flavor, nothing more. */
+static const char *WS_DOCS[4] = {
+    "ps5greenapple/boot.c", "ps5greenapple/wm.c",
+    "assets/fonts/config", "docs/ARCHITECTURE.md"
+};
+static const char *WS_TEXT[4] = {
+    /* boot.c */
+    "/* ps5greenapple/boot.c - sandboxed boot sequencer (excerpt)\n"
+    " *\n"
+    " * Boot is a pure canvas animation: no kernel calls, no firmware\n"
+    " * handoff. Each stage fails closed and degrades gracefully.\n"
+    " *\n"
+    " *   Stage 1  font_init()        embedded glyph atlas\n"
+    " *   Stage 2  wm_init()          12-slot window table, zero mallocs\n"
+    " *   Stage 3  desktop_frame()    BOOT -> RUN -> SLEEP state machine\n"
+    " *   Stage 4  video_present()    double-buffered present (SDL2/PS5)\n"
+    " *\n"
+    " * The \"Boot Camp\" targets below only re-route the background\n"
+    " * renderer - switching OS personas never touches anything outside\n"
+    " * this sandbox. */\n"
+    "static void boot_select_target(int os)\n"
+    "{\n"
+    "    desktop_set_os_target(os);   /* canvas-only re-route, 1 frame */\n"
+    "}\n",
+
+    /* wm.c */
+    "/* ps5greenapple/wm.c - window manager (excerpt)\n"
+    " *\n"
+    " * Win table: 12 fixed slots - the WM never allocates at runtime.\n"
+    " * Lifecycle: wm_open -> draw callback per frame -> wm_close\n"
+    " * (app-owned user_data is freed exactly once, no dangling refs).\n"
+    " * Z-order: new windows stack on top; shell modals draw last. */\n"
+    "Win *wm_open(int id, const char *title, ChromeStyle ch, ...)\n"
+    "{\n"
+    "    Win *w = &S_wins[id];        /* fixed slot, no heap */\n"
+    "    psa_strcpy(w->title, sizeof(w->title), title);\n"
+    "    w->draw = draw;\n"
+    "    w->open = 1;                 /* hotspots rebuilt every frame */\n"
+    "    return w;\n"
+    "}\n",
+
+    /* assets/fonts/config */
+    "# ps5greenapple embedded font atlas - simulated config snapshot\n"
+    "atlas        = fonts.S (linked at build time)\n"
+    "faces        = UI, Bold, Mono\n"
+    "ui_size      = 20\n"
+    "mono_size    = 17\n"
+    "fallback     = advance-only (unknown glyphs skip silently)\n"
+    "emoji        = not embedded - ASCII labels ship instead\n",
+
+    /* docs/ARCHITECTURE.md */
+    "# PS5GreenApple - Architecture (excerpt)\n"
+    "\n"
+    "    +--------------------------------------------------+\n"
+    "    |  apps: finder / terminal / textedit / bootcamp   |\n"
+    "    +--------------------------------------------------+\n"
+    "    |  wm: 12-slot window manager, per-OS chrome       |\n"
+    "    +-----------------------+--------------------------+\n"
+    "    |  ui: hotspots + dpad  |  osk: on-screen keyboard |\n"
+    "    +-----------------------+----------+---------------+\n"
+    "    |  gfx / font canvas layers      |  settings       |\n"
+    "    +--------------------------------+-----------------+\n"
+    "    |  backend: SDL2 (PS5) | PNG dump (host CI)        |\n"
+    "    +--------------------------------------------------+\n"
+    "\n"
+    "Everything above the backend is unprivileged userland: the payload\n"
+    "never touches bare-metal state, registers or partitions. The OS\n"
+    "personas are pure canvas simulations.\n"
+};
 
 const DockEntry g_dock[APP_COUNT + 1] = {
     { APP_FINDER,   "Finder",    ICON_FINDER },
@@ -181,13 +255,22 @@ static void shell_geo(int sw, int sh, ShellGeo *g)
     g->nb_dr_x = (int)(5 * s);     g->nb_dr_y = g->nb_panel_h + (int)(3 * s);
 }
 
-/* flat shell button (Fluent/GNOME look): flat body, centered label, hotspot */
+/* pointer hover (host mouse / DualSense touchpad): pure coordinate math
+ * against the item's own collision rect - no list walks, zero overhead */
+static int ptr_in_rect(int px, int py, int x, int y, int w, int h)
+{
+    return px >= x && px < x + w && py >= y && py < y + h;
+}
+
+/* flat shell button (Fluent/GNOME look): flat body, centered label, hotspot.
+ * Highlights on dpad focus OR pointer hover (touchpad finger / host mouse). */
 static void shell_button(int id, int x, int y, int w, int h,
                          const char *label, uint32_t bg, uint32_t hl)
 {
     if (w <= 0 || h <= 0 || !label) return;   /* defensive geometry */
     int sel = (ui_sel_id() == id);
-    gfx_round_rect(x, y, w, h, 8, sel ? hl : bg);
+    int hov = !sel && ptr_in_rect(g_in.mx, g_in.my, x, y, w, h);
+    gfx_round_rect(x, y, w, h, 8, (sel || hov) ? hl : bg);
     if (sel) gfx_round_rect_outline(x - 4, y - 4, w + 8, h + 8, 10, 2, RGB(255, 255, 255));
     int tw = font_text_w(FONT_UI, label, 19);
     font_draw(FONT_UI, label, x + (w - tw) / 2, y + (h - 24) / 2, 19, RGB(255, 255, 255));
@@ -259,9 +342,13 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
         gfx_rect(0, gg.tb_y, sw, gg.tb_h, RGB(0x10, 0x10, 0x12));    /* sleek taskbar */
         gfx_rect(0, gg.tb_y, sw, 1, RGB(0x2C, 0x2C, 0x2E));          /* high-contrast accent border */
 
-        /* Start button: pressed look while the cascading menu is open */
+        /* Start button: hover lift + pressed look while the modal is open */
+        int st_hov = !S_start_menu_open &&
+                     ptr_in_rect(g_in.mx, g_in.my, gg.st_x, gg.st_y, gg.st_w, gg.st_h);
         gfx_rect(gg.st_x, gg.st_y, gg.st_w, gg.st_h,
-                 S_start_menu_open ? RGB(0x2C, 0x2C, 0x2E) : RGB(0x1C, 0x1C, 0x1E));
+                 S_start_menu_open ? RGB(0x2C, 0x2C, 0x2E)
+                                   : (st_hov ? RGB(0x2C, 0x2C, 0x2E)
+                                             : RGB(0x1C, 0x1C, 0x1E)));
         font_draw_string(gg.st_x + (int)(13 * gg.s),
                          gg.st_y + (gg.st_h - 22) / 2 + 1,
                          "Start", RGB(0xFF, 0xFF, 0xFF));
@@ -275,7 +362,9 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
         int cw = font_text_w(FONT_UI, clk, 18);
         font_draw(FONT_UI, clk, sw - cw - (int)(16 * gg.s),
                   gg.tb_y + (gg.tb_h - 22) / 2, 18, RGB(0x8E, 0x8E, 0x93));
-        gfx_round_rect(gg.bc_x, gg.bc_y, gg.bc_w, gg.bc_h, 6, RGB(0x2C, 0x2C, 0x2E));
+        int bc_hov = ptr_in_rect(g_in.mx, g_in.my, gg.bc_x, gg.bc_y, gg.bc_w, gg.bc_h);
+        gfx_round_rect(gg.bc_x, gg.bc_y, gg.bc_w, gg.bc_h, 6,
+                       bc_hov ? RGB(0x3A, 0x3A, 0x3C) : RGB(0x2C, 0x2C, 0x2E));
         font_draw(FONT_UI, "BC", gg.bc_x + (gg.bc_w - font_text_w(FONT_UI, "BC", 18)) / 2,
                   gg.bc_y + (gg.bc_h - 22) / 2, 18, RGB(0x9A, 0x9A, 0xA0));
         ui_add_hotspot(907, gg.bc_x, gg.bc_y, gg.bc_w, gg.bc_h, "taskbar-bootcamp");
@@ -325,8 +414,13 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
             gfx_rect(0, gg.nb_panel_h - 1, sw, 1, RGB(0x25, 0x25, 0x28));
 
             /* Nobara app-deck toggle (wine-red while the drawer is open) */
+            int nb_hov = !S_nobara_menu_open &&
+                         ptr_in_rect(g_in.mx, g_in.my, gg.nb_apps_x, gg.nb_apps_y,
+                                     gg.nb_apps_w, gg.nb_apps_h);
             gfx_round_rect(gg.nb_apps_x, gg.nb_apps_y, gg.nb_apps_w, gg.nb_apps_h, 6,
-                           S_nobara_menu_open ? RGB(0xC1, 0x12, 0x1F) : RGB(0x2D, 0x2D, 0x30));
+                           S_nobara_menu_open ? RGB(0xC1, 0x12, 0x1F)
+                                              : (nb_hov ? RGB(0x3A, 0x3A, 0x3E)
+                                                        : RGB(0x2D, 0x2D, 0x30)));
             font_draw_string(gg.nb_apps_x + (int)(10 * gg.s),
                              gg.nb_apps_y + (gg.nb_apps_h - 22) / 2 + 1,
                              "Nobara Apps", RGB(0xFF, 0xFF, 0xFF));
@@ -347,8 +441,10 @@ void desktop_render_background(int active_os_target, int screen_width, int scree
             int stw = font_text_w(FONT_UI, stat, 18);
             font_draw(FONT_UI, stat, gg.nb_sw_x - stw - (int)(12 * gg.s),
                       (gg.nb_panel_h - 22) / 2, 18, RGB(0x99, 0x99, 0x9F));
+            int sw_hov = ptr_in_rect(g_in.mx, g_in.my, gg.nb_sw_x, gg.nb_apps_y,
+                                     gg.nb_sw_w, gg.nb_apps_h);
             gfx_round_rect(gg.nb_sw_x, gg.nb_apps_y, gg.nb_sw_w, gg.nb_apps_h, 6,
-                           RGB(0x2D, 0x2D, 0x30));
+                           sw_hov ? RGB(0x3A, 0x3A, 0x3E) : RGB(0x2D, 0x2D, 0x30));
             font_draw_string(gg.nb_sw_x + (int)(10 * gg.s),
                              gg.nb_apps_y + (gg.nb_apps_h - 22) / 2 + 1,
                              "CachyOS Splash", RGB(0xFF, 0xFF, 0xFF));
@@ -383,6 +479,17 @@ static void sm_band_rect(const ShellGeo *gg, int i, int *bx, int *by, int *bw, i
                    : (int)(SM_COL_W * gg->s);
 }
 
+/* Column B "Recent Workspaces" collision bands - same source of truth
+ * pattern so the read-only snapshot rows can never drift from their pixels. */
+static void ws_band_rect(const ShellGeo *gg, int d, int *bx, int *by, int *bw, int *bh)
+{
+    if (!gg || !bx || !by || !bw || !bh || d < 0 || d > 3) return;
+    *bx = gg->mn_x + (int)(SM_COLB_X * gg->s);
+    *by = gg->mn_y + (int)((WS_ITEM_OFF[d] - 8) * gg->s);
+    *bw = (int)(190 * gg->s);
+    *bh = (int)(26 * gg->s);
+}
+
 static void draw_start_menu(void)
 {
     ShellGeo gg;
@@ -412,9 +519,13 @@ static void draw_start_menu(void)
         int bx, by, bw, bh;
         sm_band_rect(&gg, i, &bx, &by, &bw, &bh);
         int sel = (ui_sel_id() == ids[i]);
+        int hov = !sel && ptr_in_rect(g_in.mx, g_in.my, bx, by, bw, bh);
         if (sel)
             gfx_rect(bx, by, bw, bh,
                      i == 5 ? RGB(0x7A, 0x1F, 0x1A) : RGB(0x0A, 0x5C, 0xFF));
+        else if (hov)   /* subtle pointer lift, distinct from dpad focus */
+            gfx_rect(bx, by, bw, bh,
+                     i == 5 ? RGB(0x3A, 0x19, 0x17) : RGB(0x26, 0x26, 0x2B));
         font_draw_string(bx + (int)(5 * gg.s), by + (bh - 22) / 2 + 1, items[i],
                          i == 5 ? RGB(0xFF, 0x3B, 0x30) : RGB(0xFF, 0xFF, 0xFF));
         /* right-aligned shortcut hint inside the cell (never overlaps) */
@@ -428,20 +539,28 @@ static void draw_start_menu(void)
         ui_add_hotspot(ids[i], bx, by, bw, bh, items[i]);
     }
 
-    /* ---- COLUMN B: emulated recent-documents sub-panel (decorative) ---- */
+    /* ---- COLUMN B: recent-workspaces sub-panel (read-only snapshots) ----
+     * Every row is live: clicking spawns TextEdit with the simulated file
+     * content loaded as a read-only snapshot. Same 26px collision bands. */
     int cbx = mx2 + (int)(SM_COLB_X * gg.s);
     gfx_rect(cbx - (int)(10 * gg.s), my2 + (int)(15 * gg.s), 1,
              mh2 - (int)(60 * gg.s), RGB(0x2C, 0x2C, 0x2E));   /* column separator */
     font_draw(FONT_UI, "Recent Workspaces", cbx, my2 + (int)(20 * gg.s), 18,
               RGB(0x8E, 0x8E, 0x93));
     gfx_rect(cbx, my2 + (int)(35 * gg.s), (int)(190 * gg.s), 1, RGB(0x2C, 0x2C, 0x2E));
-    static const char *docs[4] = {
-        "ps5greenapple/boot.c", "ps5greenapple/wm.c",
-        "assets/fonts/config", "docs/ARCHITECTURE.md"
-    };
-    for (int d = 0; d < 4; d++)
-        font_draw(FONT_UI, docs[d], cbx, my2 + (int)((50 + 26 * d) * gg.s), 18,
-                  RGB(0xCE, 0xCE, 0xCE));
+    for (int d = 0; d < 4; d++) {
+        int bx, by, bw, bh;
+        ws_band_rect(&gg, d, &bx, &by, &bw, &bh);
+        int sel = (ui_sel_id() == 921 + d);
+        int hov = !sel && ptr_in_rect(g_in.mx, g_in.my, bx, by, bw, bh);
+        if (sel)
+            gfx_rect(bx, by, bw, bh, RGB(0x0A, 0x5C, 0xFF));
+        else if (hov)
+            gfx_rect(bx, by, bw, bh, RGB(0x26, 0x26, 0x2B));
+        font_draw_string(bx + (int)(5 * gg.s), by + (bh - 22) / 2 + 1, WS_DOCS[d],
+                         RGB(0xCE, 0xCE, 0xCE));
+        ui_add_hotspot(921 + d, bx, by, bw, bh, WS_DOCS[d]);
+    }
 
     /* lower dashboard panel action control: divider + sandbox power row */
     gfx_rect(mx2 + (int)(35 * gg.s), my2 + (int)(275 * gg.s),
@@ -467,9 +586,15 @@ static void draw_nobara_drawer(void)
     for (int i = 0; i < 5; i++) {
         int by = dy + (int)((NB_ITEM_OFF[i] - 8) * gg.s);
         int sel = (ui_sel_id() == ids[i]);
+        int hov = !sel && ptr_in_rect(g_in.mx, g_in.my,
+                                      dx + (int)(8 * gg.s), by,
+                                      dw - (int)(16 * gg.s), band_h);
         if (sel)
             gfx_rect(dx + (int)(8 * gg.s), by, dw - (int)(16 * gg.s), band_h,
                      RGB(0xC1, 0x12, 0x1F));
+        else if (hov)   /* subtle pointer lift on drawer rows */
+            gfx_rect(dx + (int)(8 * gg.s), by, dw - (int)(16 * gg.s), band_h,
+                     RGB(0x2A, 0x12, 0x16));
         font_draw_string(dx + (int)(20 * gg.s), by + (band_h - 22) / 2 + 1, items[i],
                          RGB(0xFF, 0xFF, 0xFF));
         ui_add_hotspot(ids[i], dx + (int)(8 * gg.s), by,
@@ -816,6 +941,15 @@ static void dispatch_action(int id)
     case 905: S_start_menu_open = 0; app_bootcamp_open(); break;  /* Boot Camp Manager */
     case 906: S_start_menu_open = 0; S_disconnect_confirm = 1; break;  /* Disconnect */
     case 907: app_bootcamp_open(); break;     /* taskbar Boot Camp tray */
+    /* Start menu Column B: read-only workspace snapshots in TextEdit */
+    case 921: case 922: case 923: case 924: {
+        int d = id - 921;
+        if (d >= 0 && d < 4) {                /* defensive id clamp */
+            S_start_menu_open = 0;
+            app_textedit_open_content(WS_DOCS[d], WS_TEXT[d]);
+        }
+        break;
+    }
     /* ---- interactive shell chrome: Linux dual-flavor loop ---- */
     case 910: desktop_set_linux_flavor(0); desktop_toast("Nobara GNOME shell online"); break;
     case 911: desktop_toggle_nobara_menu(); break;
@@ -956,9 +1090,9 @@ int desktop_handle_click(int mx, int my)
         /* 3. cascading menu items -> safe app dispatch. Multi-column input
          *    collision: Column A app rows respond inside their 180px (720p)
          *    collision track via the shared sm_band_rect() source of truth;
-         *    the power row spans the full lower dashboard panel. Clicks
-         *    landing in Column B ("Recent Workspaces") are absorbed by the
-         *    menu body without closing it - instant, zero render overhead. */
+         *    the power row spans the full lower dashboard panel; Column B
+         *    rows open read-only workspace snapshots. Clicks landing in the
+         *    menu body are absorbed without closing - zero render overhead. */
         if (S_start_menu_open &&
             mx >= gg.mn_x && mx <= gg.mn_x + gg.mn_w &&
             my >= gg.mn_y && my <= gg.mn_y + gg.mn_h) {
@@ -969,6 +1103,16 @@ int desktop_handle_click(int mx, int my)
                 if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) {
                     ui_set_sel(ids[i]);
                     dispatch_action(ids[i]);
+                    return 1;
+                }
+            }
+            /* Column B: recent-workspace rows -> read-only TextEdit views */
+            for (int d = 0; d < 4; d++) {
+                int bx, by, bw, bh;
+                ws_band_rect(&gg, d, &bx, &by, &bw, &bh);
+                if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) {
+                    ui_set_sel(921 + d);
+                    dispatch_action(921 + d);
                     return 1;
                 }
             }

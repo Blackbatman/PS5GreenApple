@@ -18,6 +18,7 @@ typedef struct {
     char path[TE_PATH_MAX];
     int  dirty;
     int  editing;            /* OSK active */
+    int  readonly;           /* workspace snapshot view: no writes, no OSK */
 } TextEdit;
 
 static TextEdit S_te;
@@ -49,8 +50,30 @@ static void te_load(const char *path)
 
 void app_textedit_open_path(const char *path) { te_load(path); app_textedit_open(); }
 
+void app_textedit_open_content(const char *title, const char *text)
+{
+    /* in-memory read-only snapshot (Start-menu "Recent Workspaces"):
+     * the buffer is simulated content, never a file on disk, and saving
+     * is refused so snapshots can never clobber the user's notes.txt. */
+    memset(&S_te, 0, sizeof(S_te));
+    if (text) {
+        psa_strcpy(S_te.text, sizeof(S_te.text), text);
+        S_te.readonly = 1;
+    }
+    psa_strcpy(S_te.path, sizeof(S_te.path),
+               (title && title[0]) ? title : "workspace snapshot");
+    /* fresh window so the titlebar reflects the snapshot name */
+    if (wm_find(WIN_TEXTEDIT)) wm_close(WIN_TEXTEDIT);
+    wm_open(WIN_TEXTEDIT, (title && title[0]) ? title : "TextEdit",
+            CHROME_MAC, 420, 140, 1080, 680, te_draw);
+}
+
 void app_textedit_save(void)
 {
+    if (S_te.readonly) {
+        desktop_toast("Read-only workspace: %s", S_te.path);
+        return;
+    }
     ensure_dir(PSA_DATA_DIR);
     FILE *f = fopen(S_te.path, "w");
     if (!f) {
@@ -66,7 +89,9 @@ void app_textedit_save(void)
 void app_textedit_open(void)
 {
     if (!wm_find(WIN_TEXTEDIT)) {
-        if (!S_te.path[0]) te_load(NULL);
+        /* a read-only snapshot must never leak into the dock editor:
+         * reload the normal writable notes buffer for regular opens */
+        if (!S_te.path[0] || S_te.readonly) te_load(NULL);
         wm_open(WIN_TEXTEDIT, "TextEdit", CHROME_MAC, 420, 140, 1080, 680, te_draw);
     } else {
         wm_raise(wm_find(WIN_TEXTEDIT));
@@ -121,18 +146,27 @@ static void te_draw(Win *w)
     /* toolbar */
     int ty = y + ch + 16;
     int bx = x;
-    if (ui_button(400, bx, ty, 190, 46, S_te.editing ? "Close keys" : "Edit (X)", 0)) { }
-    bx += 200;
-    if (ui_button(401, bx, ty, 170, 46, "Save (SQR)", 1)) { }
-    if (ui_pressed(400)) {
-        if (S_te.editing) { osk_close(); S_te.editing = 0; }
-        else { osk_open(S_te.text, TE_MAX, "TextEdit", OSK_FLAG_NONE); S_te.editing = 1; }
+    if (S_te.readonly) {
+        if (ui_button(400, bx, ty, 190, 46, "Read-only", 0)) { }
+        bx += 200;
+        if (ui_button(401, bx, ty, 170, 46, "Snapshot", 1)) { }
+        if (ui_pressed(400) || ui_pressed(401))
+            desktop_toast("Read-only workspace snapshot - nothing to edit");
+    } else {
+        if (ui_button(400, bx, ty, 190, 46, S_te.editing ? "Close keys" : "Edit (X)", 0)) { }
+        bx += 200;
+        if (ui_button(401, bx, ty, 170, 46, "Save (SQR)", 1)) { }
+        if (ui_pressed(400)) {
+            if (S_te.editing) { osk_close(); S_te.editing = 0; }
+            else { osk_open(S_te.text, TE_MAX, "TextEdit", OSK_FLAG_NONE); S_te.editing = 1; }
+        }
+        if (ui_pressed(401)) app_textedit_save();
     }
-    if (ui_pressed(401)) app_textedit_save();
 
     /* status */
     char st[160];
-    psa_snprintf(st, sizeof(st), "%s%s  |  %d bytes",
+    psa_snprintf(st, sizeof(st), "%s%s%s  |  %d bytes",
+                 S_te.readonly ? "read-only  |  " : "",
                  S_te.editing ? "editing  |  " : "",
                  S_te.path, (int)strlen(S_te.text));
     font_draw(FONT_UI, st, x + 396, ty + 13, 16, g_theme.text_dim);

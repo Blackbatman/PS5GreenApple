@@ -9,8 +9,8 @@
 # `click x y` exercises the pointer router (desktop_handle_click) directly:
 #   1080p geometry: Start btn ~(60,1046) | two-column menu (690x480 @ 7.5,540):
 #     Column A track x=200, bands y 620/660/700/740/780 | power row (200,990)
-#     Column B decorative absorb check (500,620) | Plymouth (960,720)
-#     Nobara Apps (100,25) | drawer item 5 (200,355)
+#     Column B workspace rows (500,620..740) | body absorb (500,850)
+#     Plymouth (960,720) | Nobara Apps (100,25) | drawer item 5 (200,355)
 
 wait 3600
 
@@ -32,6 +32,15 @@ shot s03-windows-persistent
 click 60 1046
 wait 300
 shot s04-start-menu
+
+# ---- pointer hover: lift highlights without click (Column A / Column B) ----
+move 200 620
+wait 200
+shot s04b-hover-pinned
+move 500 660
+wait 200
+shot s04c-hover-workspace
+
 click 200 700
 wait 400
 shot s05-start-dispatch-terminal
@@ -39,7 +48,7 @@ sel 62
 press cross
 wait 300
 
-# ---- Start menu: Notepad Editor row + Column B absorb (menu must stay) ----
+# ---- Start menu: Notepad Editor row -> TextEdit dispatch ----
 click 60 1046
 wait 300
 click 200 740
@@ -48,11 +57,23 @@ shot s05b-start-notepad
 sel 63
 press cross
 wait 300
+
+# ---- Start menu: Column B workspace row -> read-only TextEdit snapshot ----
 click 60 1046
 wait 300
 click 500 620
+wait 400
+shot s05c-colb-workspace
+sel 63
+press cross
 wait 300
-shot s05c-colb-absorb
+
+# ---- Start menu: body absorb (empty zone below Column B rows) ----
+click 60 1046
+wait 300
+click 500 850
+wait 300
+shot s05d-colb-absorb
 click 60 1046
 wait 200
 
