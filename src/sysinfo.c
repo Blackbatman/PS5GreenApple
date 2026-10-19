@@ -1,6 +1,9 @@
 /* sysinfo.c - reads real system data on PS5 (sysctl) and host (/proc, uname) */
 #include "sysinfo.h"
 #include "common.h"
+#include "gfx.h"
+#include "font.h"
+#include "theme.h"
 #include <time.h>
 
 #ifdef __PS5__
@@ -114,3 +117,86 @@ void sysinfo_collect(SysInfo *si)
     host_disk(si);
 }
 #endif
+
+/* ---------------- live telemetry dashboard (sandbox mock) ----------------
+ * Rolling memory / core-cluster meters rendered from a window-owned
+ * buffer. All values are simulated locally with rand(); nothing here
+ * touches the kernel, hardware registers or any PS5 subsystem - it is
+ * a pure UI canvas layer painted inside the telemetry window. */
+
+typedef struct {
+    uint32_t fake_vram_used;      /* MB, rolls inside a safe band */
+    uint32_t execution_ticks;     /* draw-frame counter            */
+    int      core_load[8];        /* mock per-core utilization     */
+} TelemetryBuffer;
+
+static void telemetry_buffer_free(void *p)
+{
+    free(p);                      /* single owner: the window manager */
+}
+
+void sysinfo_render_telemetry_widget(Win *win)
+{
+    if (!win) return;
+
+    /* lazy-init: the tracking state lives in the window's user_data slot
+     * and is disposed by the window manager when the window closes. */
+    if (!win->user_data) {
+        TelemetryBuffer *tb = (TelemetryBuffer *)calloc(1, sizeof(TelemetryBuffer));
+        if (!tb) return;                       /* out of memory: skip frame */
+        tb->fake_vram_used = 4124;             /* MB */
+        tb->execution_ticks = 0;
+        for (int i = 0; i < 8; i++) tb->core_load[i] = 12 + (i * 4);
+        win->user_data = tb;
+        win->user_free = telemetry_buffer_free;
+        srand((unsigned)(now_ms() & 0x7FFFFFFFu));
+    }
+
+    TelemetryBuffer *tb = (TelemetryBuffer *)win->user_data;
+    if (!tb) return;
+
+    /* advance the tick: metrics roll smoothly across redraw frames */
+    tb->execution_ticks++;
+    if (tb->execution_ticks % 10 == 0) {
+        tb->fake_vram_used = 4000u + (uint32_t)(rand() % 250);
+        for (int i = 0; i < 8; i++) tb->core_load[i] = 15 + (rand() % 30);
+    }
+
+    /* outer dashboard interface housing panel */
+    int px = win->x + 20, py = win->y + 50;
+    int pw = win->w - 40;
+    if (pw < 200) pw = 200;                    /* defensive geometry guard */
+    gfx_rect(px, py, pw, 160, RGB(0x1E, 0x1E, 0x24));
+
+    /* live badge + header (ASCII-safe: no emoji glyphs in embedded font) */
+    gfx_circle_fill(px + 14, py + 20, 5, RGB(0, 220, 90));
+    font_draw_string(px + 26, py + 10, "LIVE - Real-Time Cluster Allocation Report",
+                     RGB(0xFF, 0xFF, 0xFF));
+
+    char telemetry_buf[96];
+    psa_snprintf(telemetry_buf, sizeof(telemetry_buf),
+                 "Unified VRAM Pool: %u MB / 16384 MB Allocated",
+                 (unsigned)tb->fake_vram_used);
+    font_draw_string(px + 15, py + 35, telemetry_buf, RGB(0x00, 0xFF, 0x00));
+
+    font_draw_string(px + 15, py + 60, "Subsystem Thread Load Matrix:",
+                     RGB(0xAA, 0xAA, 0xAA));
+
+    /* instantaneous 8-core visual layout meter block */
+    const int track_h = 40;                    /* reference 720p track size */
+    int start0 = px + 15;
+    for (int i = 0; i < 8; i++) {
+        int bar_w = tb->core_load[i];
+        if (bar_w < 0) bar_w = 0;
+        if (bar_w > track_h) bar_w = track_h;  /* never overflow the track */
+        int start_x = start0 + (i * 48);
+
+        gfx_rect(start_x, py + 85, 38, track_h, RGB(0x2D, 0x2D, 0x35));   /* track */
+        gfx_rect(start_x, py + 85 + track_h - bar_w, 38, bar_w,
+                 RGB(0x0A, 0x5C, 0xFF));                                   /* level */
+
+        psa_snprintf(telemetry_buf, sizeof(telemetry_buf), "T%d", i);
+        font_draw(FONT_MONO, telemetry_buf, start_x + 12, py + 130, 15,
+                  RGB(0x77, 0x77, 0x77));
+    }
+}

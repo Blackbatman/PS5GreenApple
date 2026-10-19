@@ -1,0 +1,75 @@
+# Theme-sync + telemetry verification script (Tweak 1/2 features).
+# Theme transforms are exercised in foreign-shell mode; the telemetry
+# flow runs in macOS mode (dock visible -> About reachable by sel).
+# Hotspots: dock 103=BootCamp 105=About | bootcamp 702/703/704
+# about 502=Cluster Telemetry | close = 60+win (66 BC, 67 WinShell,
+# 68 LinuxShell, 64 About, 70 Telemetry)
+
+wait 3600
+
+# ---- T1: open Boot Camp, hand off to Windows shell ----
+sel 103
+press cross
+wait 400
+shot t01-bootcamp
+sel 702
+press cross
+wait 400
+shot t02-windows-theme
+
+# ---- auto-revert: close everything -> macOS returns ----
+sel 67
+press cross
+wait 300
+sel 66
+press cross
+wait 400
+shot t03-autorevert-macos
+
+# ---- T1: Linux Wayland Matrix theme ----
+sel 103
+press cross
+wait 400
+sel 703
+press cross
+wait 400
+shot t04-linux-theme
+sel 68
+press cross
+wait 300
+
+# ---- restore macOS via the Boot Camp control ----
+sel 704
+press cross
+wait 400
+shot t05-restore-mac
+sel 66
+press cross
+wait 300
+
+# ---- T2: telemetry dashboard open + rolling values (macOS mode) ----
+sel 105
+press cross
+wait 400
+shot t06-about-buttons
+sel 502
+press cross
+wait 400
+shot t07-telemetry
+wait 6000
+shot t08-telemetry-rolling
+
+# ---- lifecycle: close + reopen (buffer freed, then lazy re-init) ----
+sel 70
+press cross
+wait 300
+sel 502
+press cross
+wait 300
+shot t09-telemetry-reopen
+sel 70
+press cross
+wait 200
+sel 64
+press cross
+exit

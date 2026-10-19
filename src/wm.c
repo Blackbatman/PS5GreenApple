@@ -35,16 +35,28 @@ Win *wm_open(int id, const char *title, ChromeStyle ch, int x, int y, int w, int
     return NULL;
 }
 
+/* Release app-owned window state exactly once, then drop the slot.
+ * Every close path must funnel through here so lazily allocated
+ * user_data (e.g. the telemetry buffer) can never leak. */
+static void wm_destroy_win(Win *w)
+{
+    if (!w || w < S_wins || w >= S_wins + WM_MAX_WINDOWS) return;
+    if (w->user_data && w->user_free) w->user_free(w->user_data);
+    w->user_data = NULL;
+    w->user_free = NULL;
+    w->open = 0;
+}
+
 void wm_close(int id)
 {
     for (int i = 0; i < WM_MAX_WINDOWS; i++)
-        if (S_wins[i].open && S_wins[i].id == id) { S_wins[i].open = 0; return; }
+        if (S_wins[i].open && S_wins[i].id == id) { wm_destroy_win(&S_wins[i]); return; }
 }
 
 void wm_close_top(void)
 {
     Win *t = wm_top();
-    if (t) t->open = 0;
+    if (t) wm_destroy_win(t);
 }
 
 Win *wm_find(int id)

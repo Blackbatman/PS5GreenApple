@@ -17,6 +17,12 @@ struct Win {
     WinDraw draw;
     int scroll_off;         /* content scroll helper for apps */
     int modal;
+    /* app-owned state slot: apps may lazy-init a private struct here.
+     * The window manager owns the disposal: when the window closes,
+     * user_free(user_data) runs exactly once (if set), then both are
+     * cleared - no leaks, no dangling pointers across reopen cycles. */
+    void *user_data;
+    void (*user_free)(void *user_data);
 };
 
 #define WM_MAX_WINDOWS 12
@@ -24,7 +30,7 @@ struct Win {
 /* window ids */
 enum {
     WIN_FINDER = 1, WIN_TERMINAL, WIN_TEXTEDIT, WIN_ABOUT, WIN_SETTINGS,
-    WIN_BOOTCAMP, WIN_BC_WIN, WIN_BC_LINUX, WIN_POWER
+    WIN_BOOTCAMP, WIN_BC_WIN, WIN_BC_LINUX, WIN_POWER, WIN_TELEMETRY
 };
 
 void wm_init(void);

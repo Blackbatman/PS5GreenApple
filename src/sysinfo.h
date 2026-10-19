@@ -2,6 +2,7 @@
 #ifndef SYSINFO_H
 #define SYSINFO_H
 #include "common.h"
+#include "wm.h"
 
 typedef struct SysInfo {
     char model[64];
@@ -21,5 +22,11 @@ typedef struct SysInfo {
 void sysinfo_collect(SysInfo *si);
 void sysinfo_mark_boot(void);
 const char *sysinfo_uptime_str(char *buf, int n);
+
+/* Live telemetry dashboard (About This Mac -> "Cluster Telemetry").
+ * Renders rolling VRAM / core-cluster meters from a sandbox-local
+ * mock buffer owned by the window (lazy-init via win->user_data).
+ * Pure UI canvas state - no kernel loops, no hardware access. */
+void sysinfo_render_telemetry_widget(Win *win);
 
 #endif

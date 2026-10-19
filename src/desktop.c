@@ -27,6 +27,11 @@ static uint32_t *S_wall = NULL;
 static int S_wall_built = -1;
 static uint64_t S_last_activity;
 
+/* Boot Camp OS-shell target: which environment the background canvas is
+ * currently simulating. Pure local UI state - switching only re-routes
+ * the background renderer, nothing outside the sandbox is touched. */
+static int S_os_target = OS_TARGET_MACOS;
+
 const DockEntry g_dock[APP_COUNT + 1] = {
     { APP_FINDER,   "Finder",    ICON_FINDER },
     { APP_TERMINAL, "Terminal",  ICON_TERMINAL },
@@ -61,6 +66,67 @@ void desktop_toast(const char *fmt, ...)
 
 void desktop_begin_shutdown(void) { S_state = DS_SHUTDOWN; }
 int  desktop_state(void) { return S_state; }
+
+void desktop_set_os_target(int os)
+{
+    /* defensive: unknown targets fall back to the macOS shell */
+    if (os < OS_TARGET_MACOS || os > OS_TARGET_LINUX) os = OS_TARGET_MACOS;
+    S_os_target = os;
+}
+
+int desktop_os_target(void) { return S_os_target; }
+
+/* ---------------- OS background router (Boot Camp sync) ----------------
+ * The desktop background canvas instantly re-styles to match the OS
+ * selected in Boot Camp, in a single frame: the switch is a pure render
+ * re-route with no transition pass and no allocation.
+ * Geometry is the 1280x720 reference layout scaled to the actual canvas.
+ * Colors go through RGB() because the pipeline is 0xAARRGGBB. */
+void desktop_render_background(int active_os_target, int screen_width, int screen_height)
+{
+    int sw = screen_width, sh = screen_height;
+    if (sw < 320) sw = 320;              /* defensive lower bounds */
+    if (sh < 240) sh = 240;
+    float s = (float)sh / 720.f;         /* reference sketch was 720p */
+    if (s < 0.75f) s = 0.75f;
+    if (s > 2.5f) s = 2.5f;
+
+    switch (active_os_target) {
+    case OS_TARGET_MACOS:
+        /* macOS Workstation: Deep Premium Apple Obsidian theme (Aqua Slate).
+         * Standalone fallback strip - the live desktop normally layers the
+         * Sonoma wallpaper + full menubar on top of this route. */
+        gfx_clear(RGB(0x16, 0x16, 0x17));
+        gfx_rect(0, 0, sw, (int)(40 * s), RGB(0x24, 0x24, 0x26));   /* menu bar */
+        font_draw_string(15, 12, "Finder  File  Edit  View  Go  Window  Help",
+                         RGB(0xFF, 0xFF, 0xFF));
+        break;
+
+    case OS_TARGET_WINDOWS:
+        /* Windows: Classic Midnight Teal Workstation layout (Fluent Core). */
+        gfx_clear(RGB(0x00, 0x5A, 0x5B));
+        gfx_rect(0, sh - (int)(45 * s), sw, (int)(45 * s), RGB(0x10, 0x10, 0x10)); /* taskbar */
+        gfx_rect((int)(5 * s), sh - (int)(40 * s), (int)(60 * s), (int)(35 * s),
+                 RGB(0x1F, 0x1F, 0x1F));                             /* start button */
+        font_draw_string(18, sh - (int)(28 * s), "Start", RGB(0x00, 0xFF, 0x00));
+        /* pinned Boot Camp launcher on the taskbar = permanent way back
+         * into the boot manager while a non-mac shell is active */
+        ui_add_hotspot(107, (int)(5 * s), sh - (int)(45 * s),
+                       (int)(60 * s) + 24, (int)(45 * s), "taskbar-start");
+        break;
+
+    case OS_TARGET_LINUX:
+        /* Linux: Wayland-inspired Dark Auburn core (GNOME shell). */
+        gfx_clear(RGB(0x2D, 0x09, 0x22));
+        gfx_rect(0, 0, sw, (int)(30 * s), RGB(0x11, 0x11, 0x11));   /* top panel */
+        font_draw_string(sw / 2 - 30, 8, "Activities", RGB(0xCE, 0xCE, 0xCE));
+        break;
+
+    default:
+        gfx_clear(RGB(0, 0, 0));
+        break;
+    }
+}
 
 /* ---------------- wallpaper (precomputed) ---------------- */
 static void build_wallpaper(int variant)
@@ -110,6 +176,12 @@ static void build_wallpaper(int variant)
 
 void desktop_draw_wallpaper(void)
 {
+    /* Boot Camp theme sync: non-mac targets bypass the Sonoma wallpaper
+     * entirely - the OS router owns the full canvas for this frame. */
+    if (S_os_target != OS_TARGET_MACOS) {
+        desktop_render_background(S_os_target, PSA_W, PSA_H);
+        return;
+    }
     build_wallpaper(g_settings.wallpaper);
     if (S_wall) {
         uint32_t *fb = gfx_fb();
@@ -350,6 +422,7 @@ static void dispatch_action(int id)
     case 11: S_apple_open = 0; app_settings_open(); break;
     case 12: S_apple_open = 0; S_state = DS_SLEEP; break;
     case 13: S_apple_open = 0; desktop_begin_shutdown(); break;
+    case 107: desktop_open_app(APP_BOOTCAMP); break;   /* taskbar start (Windows shell) */
     default: break;                       /* app-internal ids handled by apps */
     }
 }
@@ -384,6 +457,14 @@ void desktop_frame(void)
     /* ---- active desktop ---- */
     if (g_in.clicked || g_in.buttons) S_last_activity = now_ms();
 
+    /* Boot Camp guard: if the user closed every window while a foreign
+     * shell was simulated, fall back to the macOS environment so the
+     * dock (and every launch path) is always reachable again. */
+    if (S_os_target != OS_TARGET_MACOS && !wm_any_open()) {
+        S_os_target = OS_TARGET_MACOS;
+        desktop_toast("Returning to macOS Aqua Slate shell");
+    }
+
     handle_global_keys();
 
     /* dpad navigation */
@@ -394,11 +475,13 @@ void desktop_frame(void)
 
     if (in_clicked(BTN_CROSS) && !osk_active()) dispatch_action(ui_sel_id());
 
-    /* ---- draw ---- */
+    /* ---- draw ----
+     * In Boot Camp foreign-shell mode the macOS menubar/dock are replaced
+     * by the target OS chrome rendered inside the background router. */
     desktop_draw_wallpaper();
-    draw_menubar();
+    if (S_os_target == OS_TARGET_MACOS) draw_menubar();
     wm_draw_all();
-    draw_dock();
+    if (S_os_target == OS_TARGET_MACOS) draw_dock();
 
     if (S_power_open) draw_power_dialog();
     if (osk_active()) osk_frame();

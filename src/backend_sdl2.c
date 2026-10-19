@@ -38,14 +38,25 @@ static int btn_map(int b)
 int video_init(int argc, char **argv)
 {
     (void)argc; (void)argv;
+    /* 1. video + controller subsystems; fail-closed with SDL diagnostics */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    S_win = SDL_CreateWindow("PS5GreenApple", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             PSA_W, PSA_H, 0);
+    /* 2. unprivileged user-space display window (HiDPI aware on desktop) */
+    S_win = SDL_CreateWindow("PS5GreenApple - macOS Environment Simulation Port",
+                             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                             PSA_W, PSA_H,
+                             SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!S_win) { fprintf(stderr, "CreateWindow failed: %s\n", SDL_GetError()); return 1; }
+    /* 3. bind the software rasterizer to the window surface. The pure
+     *    software canvas is the intended path (no GPU/shader dependency);
+     *    if the surface is unavailable we fall back to an owned buffer
+     *    and keep rendering so the environment never hard-locks. */
     S_surf = SDL_GetWindowSurface(S_win);
+    if (!S_surf)
+        fprintf(stderr, "Warning: window surface unavailable (%s) - using owned canvas\n",
+                SDL_GetError());
 
     if (S_surf && S_surf->format && S_surf->format->format == SDL_PIXELFORMAT_ARGB8888 &&
         S_surf->pitch == PSA_W * 4) {
@@ -155,15 +166,19 @@ void video_present(void)
             memcpy(dst + (size_t)y * pitch, S_fb + (size_t)y * PSA_W, (size_t)cw * 4);
         if (SDL_MUSTLOCK(S_surf)) SDL_UnlockSurface(S_surf);
     }
-    SDL_UpdateWindowSurface(S_win);
+    if (S_surf)
+        SDL_UpdateWindowSurface(S_win);
 }
 
 int video_should_close(void) { return S_should_close || g_quit_request; }
 
 void video_shutdown(void)
 {
-    if (S_pad) SDL_GameControllerClose(S_pad);
-    if (S_own_fb) free(S_fb);
-    if (S_win) SDL_DestroyWindow(S_win);
+    /* orderly teardown: pad -> framebuffer -> window -> subsystem */
+    if (S_pad) { SDL_GameControllerClose(S_pad); S_pad = NULL; }
+    if (S_own_fb && S_fb) { free(S_fb); S_fb = NULL; }
+    S_own_fb = 0;
+    if (S_win) { SDL_DestroyWindow(S_win); S_win = NULL; }
+    S_surf = NULL;
     SDL_Quit();
 }

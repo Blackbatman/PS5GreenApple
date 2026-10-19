@@ -109,8 +109,15 @@ static void bc_draw(Win *w)
               lx, yy + 68, 16, g_theme.text_dim);
     if (ui_button(700, x + cw - 210, yy + 92, 190, 42, "Boot Linux", S_bc.linux_ok)) { }
     if (ui_pressed(700)) {
-        if (S_bc.linux_ok) desktop_toast("Chainloading Linux kernel...");
-        else desktop_toast("Linux files not found");
+        /* simulated handoff: pure UI state transfer, nothing reboots */
+        if (S_bc.linux_ok) {
+            desktop_set_os_target(OS_TARGET_LINUX);
+            wm_open(WIN_BC_LINUX, "GNOME Terminal - Boot Camp", CHROME_LINUX,
+                    560, 300, 880, 480, linux_shell_draw);
+            desktop_toast("Chainloading Linux kernel... (simulated shell handoff)");
+        } else {
+            desktop_toast("Linux files not found");
+        }
     }
     yy += 166;
 
@@ -123,8 +130,15 @@ static void bc_draw(Win *w)
               lx, yy + 52, 16, g_theme.text_dim);
     if (ui_button(701, x + cw - 210, yy + 92, 190, 42, "Boot Windows", S_bc.win_ok)) { }
     if (ui_pressed(701)) {
-        if (S_bc.win_ok) desktop_toast("Rebooting into Windows Boot Manager...");
-        else desktop_toast("No Windows volume found");
+        /* simulated handoff: pure UI state transfer, nothing reboots */
+        if (S_bc.win_ok) {
+            desktop_set_os_target(OS_TARGET_WINDOWS);
+            wm_open(WIN_BC_WIN, "Command Prompt - Boot Camp", CHROME_WIN,
+                    520, 260, 880, 480, win_shell_draw);
+            desktop_toast("Rebooting into Windows Boot Manager... (simulated)");
+        } else {
+            desktop_toast("No Windows volume found");
+        }
     }
     yy += 182;
 
@@ -132,16 +146,27 @@ static void bc_draw(Win *w)
     yy += 40;
     if (ui_button(702, x, yy, 250, 46, "Open Windows shell", 0)) { }
     if (ui_button(703, x + 262, yy, 250, 46, "Open Linux shell", 0)) { }
-    if (ui_pressed(702))
+    if (ui_button(704, x + 524, yy, 250, 46, "Use macOS shell", 0)) { }
+    if (ui_pressed(702)) {
+        desktop_set_os_target(OS_TARGET_WINDOWS);
         wm_open(WIN_BC_WIN, "Command Prompt - Boot Camp", CHROME_WIN, 520, 260, 880, 480, win_shell_draw);
-    if (ui_pressed(703))
+    }
+    if (ui_pressed(703)) {
+        desktop_set_os_target(OS_TARGET_LINUX);
         wm_open(WIN_BC_LINUX, "GNOME Terminal - Boot Camp", CHROME_LINUX, 560, 300, 880, 480, linux_shell_draw);
+    }
+    if (ui_pressed(704)) {
+        desktop_set_os_target(OS_TARGET_MACOS);
+        desktop_toast("macOS Aqua Slate shell restored");
+    }
 
     yy += 62;
     font_draw(FONT_UI, "Boot Camp reuses the real OS shell renderers: each preview uses its native",
               x, yy, 15, g_theme.text_dim);
-    font_draw(FONT_UI, "window chrome, powered by the same software rasterizer.",
+    font_draw(FONT_UI, "window chrome and syncs the whole desktop background to that OS theme",
               x, yy + 20, 15, g_theme.text_dim);
+    font_draw(FONT_UI, "(Aqua Slate / Fluent Core / Wayland Matrix) in a single frame.",
+              x, yy + 40, 15, g_theme.text_dim);
 }
 
 static void win_shell_draw(Win *w)

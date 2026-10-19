@@ -13,6 +13,7 @@ static SysInfo S_si;
 static int S_report;      /* 0 = about page, 1 = system report */
 
 static void about_draw(Win *w);
+static void telemetry_draw(Win *w);
 
 void app_about_open(void)
 {
@@ -22,6 +23,21 @@ void app_about_open(void)
         wm_open(WIN_ABOUT, "About This Mac", CHROME_MAC, 480, 150, 960, 660, about_draw);
     else
         wm_raise(wm_find(WIN_ABOUT));
+}
+
+/* telemetry window: the widget owns its state via win->user_data */
+static void telemetry_draw(Win *w)
+{
+    sysinfo_render_telemetry_widget(w);
+}
+
+static void telemetry_open(void)
+{
+    if (!wm_find(WIN_TELEMETRY))
+        wm_open(WIN_TELEMETRY, "Cluster Telemetry", CHROME_MAC, 640, 320, 560, 310,
+                telemetry_draw);
+    else
+        wm_raise(wm_find(WIN_TELEMETRY));
 }
 
 static void row(Win *w, int *yy, const char *k, const char *v)
@@ -47,8 +63,12 @@ static void about_draw(Win *w)
         row(w, &yy, "Loader", S_si.loader);
         row(w, &yy, "Display", S_si.display);
 
-        if (ui_button(500, w->x + w->w / 2 - 130, w->y + w->h - 92, 260, 50, "System Report...", 0)) { }
+        if (ui_button(500, w->x + w->w / 2 - 280, w->y + w->h - 92, 260, 50,
+                      "System Report...", 0)) { }
         if (ui_pressed(500)) S_report = 1;
+        if (ui_button(502, w->x + w->w / 2 + 20, w->y + w->h - 92, 260, 50,
+                      "Cluster Telemetry", 0)) { }
+        if (ui_pressed(502)) telemetry_open();
     } else {
         font_draw(FONT_BOLD, "System Report", w->x + 32, w->y + 66, 26, g_theme.text_bright);
         int yy = w->y + 120;
