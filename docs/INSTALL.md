@@ -75,6 +75,34 @@ make shots          # regenerate all README screenshots from the demo script
 make clean
 ```
 
+#### 1.3.1 Verified toolchain
+
+The ELF shipped with this project was produced with the exact combination
+below; other LLVM versions may work but are untested:
+
+| Component         | Version / source                                        |
+|-------------------|---------------------------------------------------------|
+| ps5-payload-sdk   | v0.44 (Sce stubs, crt1.o, ldscripts, `prospero.mk`)      |
+| clang             | 18.1.8 (Debian `clang-18`)                               |
+| ld.lld            | 18.1.8 (Debian `lld-18`)                                 |
+| SDL2 (PS5 port)   | ps5-payload-dev/SDL, static `libSDL2.a` in `target/lib`  |
+
+Any LLVM 15-23 satisfies the SDK's `prospero-llvm-config` lookup
+(`llvm-config-15` ... `llvm-config-23` or `LLVM_CONFIG`). On Debian/Ubuntu,
+`apt install clang-18 lld-18 llvm-18` is sufficient; without root, the same
+packages can be extracted into a local prefix with
+`apt-get download ... && dpkg -x <pkg.deb> ~/llvm18` and picked up through
+`LLVM_CONFIG=$HOME/llvm18/usr/lib/llvm-18/bin/llvm-config`.
+
+The final link needs these Sce stub libraries (already wired into the
+Makefile): `-lSceVideoOut -lSceSysmodule -lSceUserService -lScePad
+-lSceImeDialog -lSceKeyboard -lSceSystemService -lc -lkernel`. SDL2 is
+linked statically from `libSDL2.a`; the resulting ELF imports ten `.sprx`
+system modules (VideoOut, Sysmodule, UserService, Pad, ImeDialog, Keyboard,
+SystemService, kernel, SceLibcInternal, SceNet) and nothing else. The PS5
+SDL2 port also omits `SDL_NumGameControllers()`, so the backend enumerates
+joysticks with `SDL_NumJoysticks()`/`SDL_IsGameController()` instead.
+
 ### 1.4 Or skip the build entirely
 
 Every push to the main branch builds `ps5greenapple.elf` in CI

@@ -36,6 +36,19 @@ static int btn_map(int b)
     }
 }
 
+/* The PS5 SDL2 port omits the SDL_NumGameControllers() convenience wrapper;
+ * emulate it through the canonical joystick enumeration so both host SDL and
+ * the console build share one code path. */
+static int pad_controller_count(void)
+{
+    int n = 0;
+    int total = SDL_NumJoysticks();
+    for (int i = 0; i < total; i++)
+        if (SDL_IsGameController(i))
+            n++;
+    return n;
+}
+
 int video_init(int argc, char **argv)
 {
     (void)argc; (void)argv;
@@ -69,7 +82,7 @@ int video_init(int argc, char **argv)
     if (!S_fb) return 1;
     gfx_init(S_fb, PSA_W, PSA_H);
 
-    if (SDL_NumGameControllers() > 0)
+    if (pad_controller_count() > 0)
         S_pad = SDL_GameControllerOpen(0);
     return 0;
 }
@@ -77,7 +90,7 @@ int video_init(int argc, char **argv)
 static void poll_pad(void)
 {
     int mask = 0;
-    if (SDL_NumGameControllers() > 0) {
+    if (pad_controller_count() > 0) {
         if (!S_pad) S_pad = SDL_GameControllerOpen(0);
         if (S_pad) {
             for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++)

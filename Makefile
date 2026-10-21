@@ -31,7 +31,10 @@ PS5_OBJS := $(patsubst $(SRC_DIR)/%.c,build/ps5/%.o,$(filter %.c,$(PS5_SRCS))) \
 	    build/ps5/fonts.o
 
 LDFLAGS += -Wl,--allow-shlib-undefined -L$(PS5_PAYLOAD_SDK)/target/lib
-LDLIBS  := -lSDL2 -lSceVideoOut -lSceSysmodule -lSceUserService -lScePad -lc -lkernel
+# SDL2's PS5 video/keyboard backends pull in IME dialog, USB keyboard and
+# system-service stubs on top of the core video/pad/user set.
+LDLIBS  := -lSDL2 -lSceVideoOut -lSceSysmodule -lSceUserService -lScePad \
+	   -lSceImeDialog -lSceKeyboard -lSceSystemService -lc -lkernel
 
 all: $(NAME).elf
 
