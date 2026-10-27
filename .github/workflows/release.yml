@@ -1,0 +1,164 @@
+name: Build, test, and release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux-host:
+    name: Linux host + screenshots
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build host dump
+        run: make host
+
+      - name: Render screenshots
+        run: make shots
+
+      - name: Upload Linux host artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-host
+          path: |
+            build/host/ps5greenapple-dump
+            shots
+
+  macos-sim:
+    name: macOS SDL sim
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SDL2
+        run: brew install sdl2
+
+      - name: Build SDL2 sim
+        run: make sim
+
+      - name: Verify sim binary
+        run: |
+          test -x build/sim/ps5greenapple-sim
+          file build/sim/ps5greenapple-sim
+
+      - name: Upload macOS sim artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-sim
+          path: build/sim/ps5greenapple-sim
+
+  ps5-elf:
+    name: PS5 payload ELF
+    runs-on: ubuntu-24.04
+    env:
+      PS5_PAYLOAD_SDK: /opt/ps5-sdk
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install LLVM toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang lld llvm cmake unzip wget
+
+      - name: Restore PS5 SDK cache
+        id: sdkcache
+        uses: actions/cache@v4
+        with:
+          path: /opt/ps5-sdk
+          key: ps5-sdk-0.44-llvm18-sdl2-v1
+
+      - name: Install ps5-payload-sdk
+        if: steps.sdkcache.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip \
+              -O /tmp/ps5-payload-sdk.zip
+          rm -rf "$PS5_PAYLOAD_SDK"
+          unzip -q /tmp/ps5-payload-sdk.zip -d /opt
+          mv /opt/ps5-payload-sdk "$PS5_PAYLOAD_SDK"
+          "$PS5_PAYLOAD_SDK/bin/prospero-llvm-config" --version
+
+      - name: Install SDL2 for PS5
+        if: steps.sdkcache.outputs.cache-hit != 'true'
+        run: |
+          git clone --recursive --depth 1 https://github.com/ps5-payload-dev/SDL /tmp/SDL
+          cd /tmp/SDL
+          source "$PS5_PAYLOAD_SDK/toolchain/prospero.sh"
+          if [ -f build-scripts/ps5-payload-sdk.sh ]; then
+            "${CMAKE}" -DCMAKE_BUILD_TYPE=Release -B build-ps5 -S .
+            "${MAKE}" -C build-ps5 -j"$(nproc)"
+            DESTDIR= cmake --install build-ps5 --prefix "$PS5_PAYLOAD_SDK/target"
+          else
+            mkdir build && cd build
+            ../configure --host=x86_64-pc-freebsd12-elf \
+                --prefix="$PS5_PAYLOAD_SDK/target" --disable-shared --enable-static
+            make -j"$(nproc)" && make install
+          fi
+          test -f "$PS5_PAYLOAD_SDK/target/lib/libSDL2.a"
+
+      - name: Build ps5greenapple.elf
+        run: |
+          echo "$PS5_PAYLOAD_SDK/bin" >> "$GITHUB_PATH"
+          make
+
+      - name: Verify ELF
+        run: |
+          file ps5greenapple.elf
+          readelf -d ps5greenapple.elf | grep NEEDED | head -12
+
+      - name: Upload PS5 ELF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5-elf
+          path: ps5greenapple.elf
+
+  windows-host:
+    name: Optional Windows host
+    runs-on: windows-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install MinGW
+        shell: pwsh
+        run: |
+          choco install mingw -y
+
+      - name: Build Windows host
+        shell: bash
+        run: |
+          export HOST_CC=x86_64-w64-mingw32-gcc
+          make host
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-host
+          path: build/host/ps5greenapple-dump.exe
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux-host, macos-sim, ps5-elf]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Prepare release bundle
+        run: |
+          mkdir -p final
+          find dist -type f -exec cp {} final/ \;
+          ls -l final
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: final/*
+          generate_release_notes: true
