@@ -9,9 +9,9 @@ on:
 jobs:
   host-shots:
     name: Host build + screenshots
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build headless dump binary
         run: make host
@@ -25,25 +25,71 @@ jobs:
           name: screenshots
           path: shots/*.png
 
+  macos-sim:
+    name: Desktop sim (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SDL2
+        run: brew install sdl2
+
+      - name: Build SDL2 windowed simulation
+        run: make sim
+
+      - name: Verify sim binary
+        run: |
+          test -x build/sim/ps5greenapple-sim
+          file build/sim/ps5greenapple-sim
+
   ps5-elf:
     name: PS5 payload ELF
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/ps5-payload-dev/sdk:latest
-      options: --user root
+    runs-on: ubuntu-24.04
+    env:
+      PS5_PAYLOAD_SDK: /opt/ps5-sdk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      # The official ghcr.io/ps5-payload-dev/sdk container is not anonymously
+      # pullable, so we reproduce it on the runner: SDK release zip (Sce stubs,
+      # crt1.o, ldscripts, prospero.mk wrappers) + distro LLVM (18 on noble,
+      # the exact toolchain the shipped ELF was built with).
+      - name: Install LLVM toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang lld llvm cmake unzip wget
+
+      - name: Restore PS5 SDK cache
+        id: sdkcache
+        uses: actions/cache@v4
+        with:
+          path: /opt/ps5-sdk
+          key: ps5-sdk-0.44-llvm18-sdl2-v1
+
+      - name: Install ps5-payload-sdk
+        if: steps.sdkcache.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip \
+              -O /tmp/ps5-payload-sdk.zip
+          rm -rf "$PS5_PAYLOAD_SDK"
+          unzip -q /tmp/ps5-payload-sdk.zip -d /opt
+          mv /opt/ps5-payload-sdk "$PS5_PAYLOAD_SDK"
+          "$PS5_PAYLOAD_SDK/bin/prospero-llvm-config" --version
 
       - name: Install SDL2 for PS5
+        if: steps.sdkcache.outputs.cache-hit != 'true'
         run: |
           git clone --recursive --depth 1 https://github.com/ps5-payload-dev/SDL /tmp/SDL
           cd /tmp/SDL
+          source "$PS5_PAYLOAD_SDK/toolchain/prospero.sh"
           if [ -f build-scripts/ps5-payload-sdk.sh ]; then
             # official build path: CMake driven by the SDK toolchain environment
-            source "$PS5_PAYLOAD_SDK/toolchain/prospero.sh"
-            cmake -DCMAKE_BUILD_TYPE=Release -B build-ps5 -S .
-            cmake --build build-ps5 --parallel "$(nproc)"
-            cmake --install build-ps5 --prefix "$PS5_PAYLOAD_SDK/target"
+            "${CMAKE}" -DCMAKE_BUILD_TYPE=Release -B build-ps5 -S .
+            "${MAKE}" -C build-ps5 -j"$(nproc)"
+            # prospero.sh exports DESTDIR=$PS5_PAYLOAD_SDK/target; clear it so
+            # --prefix lands directly in target/{lib,include} where the
+            # project Makefile's -L/-I paths expect it (no doubled DESTDIR+prefix)
+            DESTDIR= cmake --install build-ps5 --prefix "$PS5_PAYLOAD_SDK/target"
           else
             # fallback for older branches that ship autotools
             mkdir build && cd build
@@ -51,9 +97,17 @@ jobs:
                 --prefix="$PS5_PAYLOAD_SDK/target" --disable-shared --enable-static
             make -j"$(nproc)" && make install
           fi
+          test -f "$PS5_PAYLOAD_SDK/target/lib/libSDL2.a"
 
       - name: Build ps5greenapple.elf
-        run: make
+        run: |
+          echo "$PS5_PAYLOAD_SDK/bin" >> "$GITHUB_PATH"
+          make
+
+      - name: Verify ELF
+        run: |
+          file ps5greenapple.elf
+          readelf -d ps5greenapple.elf | grep NEEDED | head -12
 
       - name: Upload ELF artifact
         uses: actions/upload-artifact@v4
