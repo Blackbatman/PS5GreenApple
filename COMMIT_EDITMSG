@@ -1,0 +1,12 @@
+ci: fix SDK install DESTDIR doubling; add SceAudioOut stub
+
+- SDL2 install: prospero.sh exports DESTDIR=$SDK/target AND --prefix was
+  $SDK/target -> cmake prepends DESTDIR to prefix, doubling the path
+  (libSDL2.a landed in target/tmp/.../target/lib). Install with DESTDIR=
+  cleared so files land in target/{lib,include} where the Makefile looks
+- use ${CMAKE}/${MAKE} from prospero.sh (official build-script vars)
+- Makefile: -lSceAudioOut (fresh SDL2 enables its PS5 audio backend ->
+  sceAudioOut* undefined at link); stub ships in the SDK release zip
+- verified END-TO-END locally: fresh SDK release zip + clang/lld 18 +
+  SDL2 cross-built from ps5-payload-dev/SDL -> ps5greenapple.elf links
+  (ELF64 x86-64 DYN, 11 .sprx imports incl. libSceAudioOut)
