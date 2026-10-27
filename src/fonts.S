@@ -1,5 +1,11 @@
 /* fonts.S - embed Liberation fonts into the binary (works with gcc & clang) */
 #if defined(__APPLE__)
+#define ASM_NAME(sym) _##sym
+#else
+#define ASM_NAME(sym) sym
+#endif
+
+#if defined(__APPLE__)
     .section __TEXT,__rodata,regular,pure_instructions
     .align 4
 #else
@@ -7,11 +13,11 @@
     .balign 16
 #endif
 
-.global font_sans_reg_start
-font_sans_reg_start:
+.global ASM_NAME(font_sans_reg_start)
+ASM_NAME(font_sans_reg_start):
     .incbin "assets/fonts/LiberationSans-Regular.ttf"
-.global font_sans_reg_end
-font_sans_reg_end:
+.global ASM_NAME(font_sans_reg_end)
+ASM_NAME(font_sans_reg_end):
 
 #if defined(__APPLE__)
     .align 4
@@ -19,11 +25,11 @@ font_sans_reg_end:
     .balign 16
 #endif
 
-.global font_sans_bold_start
-font_sans_bold_start:
+.global ASM_NAME(font_sans_bold_start)
+ASM_NAME(font_sans_bold_start):
     .incbin "assets/fonts/LiberationSans-Bold.ttf"
-.global font_sans_bold_end
-font_sans_bold_end:
+.global ASM_NAME(font_sans_bold_end)
+ASM_NAME(font_sans_bold_end):
 
 #if defined(__APPLE__)
     .align 4
@@ -31,11 +37,11 @@ font_sans_bold_end:
     .balign 16
 #endif
 
-.global font_mono_start
-font_mono_start:
+.global ASM_NAME(font_mono_start)
+ASM_NAME(font_mono_start):
     .incbin "assets/fonts/LiberationMono-Regular.ttf"
-.global font_mono_end
-font_mono_end:
+.global ASM_NAME(font_mono_end)
+ASM_NAME(font_mono_end):
 
 #if !defined(__APPLE__)
     .section .note.GNU-stack,"",@progbits
