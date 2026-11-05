@@ -30,8 +30,10 @@ struct Win {
 /* window ids */
 enum {
     WIN_FINDER = 1, WIN_TERMINAL, WIN_TEXTEDIT, WIN_ABOUT, WIN_SETTINGS,
-    WIN_BOOTCAMP, WIN_BC_WIN, WIN_BC_LINUX, WIN_POWER, WIN_TELEMETRY
+    WIN_BOOTCAMP, WIN_BC_WIN, WIN_BC_LINUX, WIN_POWER, WIN_TELEMETRY,
+    WIN_NEXUS
 };
+
 
 void wm_init(void);
 Win *wm_open(int id, const char *title, ChromeStyle ch, int x, int y, int w, int h,
