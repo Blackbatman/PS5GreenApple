@@ -78,7 +78,7 @@ shots: host
 clean:
 	rm -rf build $(NAME).elf shots
 
-.PHONY: all host sim shots clean deploy
+.PHONY: all host sim shots icon clean deploy
 
 # ------------------------- desktop sim (macOS / Linux) -------------------------
 # Builds the real SDL2 windowed simulation (backend_sdl2.c) without any PS5
@@ -96,4 +96,15 @@ sim:
 	$(HOST_CC) $(shell sdl2-config --cflags) -O2 -std=gnu11 -Wall -Wextra \
 	        -Wno-unused-parameter -I$(SRC_DIR) -Ithird_party \
 	        -o build/sim/$(NAME)-sim $(SIM_SRCS) $(shell sdl2-config --libs) -lm
+
+# ------------------------- icon0.png (host tool) -------------------------
+# Renders the 512x512 homebrew icon with the project's own gfx/font stack.
+# No external art assets; output goes to build/icon0.png.
+ICON_SRCS := tools/make_icon.c $(SRC_DIR)/gfx.c $(SRC_DIR)/font.c \
+             $(SRC_DIR)/core.c $(SRC_DIR)/fonts.S
+
+icon:
+	@mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -o build/make_icon $(ICON_SRCS) -lm
+	./build/make_icon build/icon0.png
 
