@@ -1,6 +1,0 @@
-// In video_init() and main(), after any failure:
-FILE *log = fopen("/data/PS5GreenApple/crash.log", "a");
-if (log) {
-    fprintf(log, "video_init failed: %s\n", SDL_GetError());
-    fclose(log);
-}

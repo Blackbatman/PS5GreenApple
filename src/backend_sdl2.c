@@ -112,8 +112,10 @@ static void poll_pad(void)
             int ly = SDL_GameControllerGetAxis(S_pad, SDL_CONTROLLER_AXIS_LEFTY);
             if (abs(lx) > 4000 || abs(ly) > 4000) {
                 int px = g_in.mx + lx / 12000, py = g_in.my + ly / 12000;
-                if (px < 0) px = 0; if (px >= PSA_W) px = PSA_W - 1;
-                if (py < 0) py = 0; if (py >= PSA_H) py = PSA_H - 1;
+                if (px < 0) px = 0;
+                if (px >= PSA_W) px = PSA_W - 1;
+                if (py < 0) py = 0;
+                if (py >= PSA_H) py = PSA_H - 1;
                 g_in.mx = px; g_in.my = py;
             }
         }
@@ -172,8 +174,10 @@ void video_poll(void)
              * desktop coordinate click handler (desktop_handle_click). */
             {
                 int tx = (int)(ev.tfinger.x * PSA_W), ty = (int)(ev.tfinger.y * PSA_H);
-                if (tx < 0) tx = 0; if (tx >= PSA_W) tx = PSA_W - 1;
-                if (ty < 0) ty = 0; if (ty >= PSA_H) ty = PSA_H - 1;
+                if (tx < 0) tx = 0;
+                if (tx >= PSA_W) tx = PSA_W - 1;
+                if (ty < 0) ty = 0;
+                if (ty >= PSA_H) ty = PSA_H - 1;
                 g_in.mx = tx; g_in.my = ty;
             }
             break;

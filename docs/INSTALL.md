@@ -71,6 +71,7 @@ Useful extras:
 
 ```bash
 make host           # headless host build (no SDK required)
+make sim            # SDL2 windowed desktop sim for macOS/Linux (brew install sdl2)
 make shots          # regenerate all README screenshots from the demo script
 make clean
 ```
@@ -82,10 +83,11 @@ below; other LLVM versions may work but are untested:
 
 | Component         | Version / source                                        |
 |-------------------|---------------------------------------------------------|
-| ps5-payload-sdk   | v0.44 (Sce stubs, crt1.o, ldscripts, `prospero.mk`)      |
-| clang             | 18.1.8 (Debian `clang-18`)                               |
-| ld.lld            | 18.1.8 (Debian `lld-18`)                                 |
-| SDL2 (PS5 port)   | ps5-payload-dev/SDL, static `libSDL2.a` in `target/lib`  |
+| ps5-payload-sdk   | v0.44 release zip (Sce stubs, crt1.o, ldscripts)         |
+| clang             | 18.1.8 (Debian/Ubuntu `clang-18`)                        |
+| ld.lld            | 18.1.8 (Debian/Ubuntu `lld-18`)                          |
+| SDL2 (PS5 port)   | built from ps5-payload-dev/SDL via the official CMake    |
+|                   | path, installed into the SDK's `target/` prefix          |
 
 Any LLVM 15-23 satisfies the SDK's `prospero-llvm-config` lookup
 (`llvm-config-15` ... `llvm-config-23` or `LLVM_CONFIG`). On Debian/Ubuntu,
@@ -93,6 +95,12 @@ Any LLVM 15-23 satisfies the SDK's `prospero-llvm-config` lookup
 packages can be extracted into a local prefix with
 `apt-get download ... && dpkg -x <pkg.deb> ~/llvm18` and picked up through
 `LLVM_CONFIG=$HOME/llvm18/usr/lib/llvm-18/bin/llvm-config`.
+
+CI does exactly this on a stock `ubuntu-24.04` runner: it downloads the SDK
+release zip, builds the PS5 SDL2 port from source, and links the payload -
+no privileged container involved (the official
+`ghcr.io/ps5-payload-dev/sdk` image is not anonymously pullable, which used
+to break the workflow with "Docker pull failed").
 
 The final link needs these Sce stub libraries (already wired into the
 Makefile): `-lSceVideoOut -lSceSysmodule -lSceUserService -lScePad

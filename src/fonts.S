@@ -1,39 +1,47 @@
-/* fonts.S - embed Liberation fonts into the binary (works with gcc & clang) */
-#if defined(__APPLE__)
-#define ASM_NAME(sym) _##sym
-#define ASM_SECTION   .section __TEXT,__rodata,regular,pure_instructions
-#define ASM_ALIGN     .align 4
+/* fonts.S - embed Liberation fonts into the binary (works with gcc & clang)
+ *
+ * Portable across ELF (PS5 payload, Linux host) and Mach-O (macOS sim):
+ *  - .S is preprocessed, so we can key off __MACH__ / __ELF__.
+ *  - Mach-O needs segment-style sections (__TEXT,__const) and prefixes every
+ *    C-visible symbol with an underscore; ELF does not.
+ *  - The ELF branch stays byte-identical to the pre-port file, so the PS5
+ *    payload hash is unaffected by this change.
+ */
+
+#if defined(__MACH__)
+#define SYM(name) _##name
 #else
-#define ASM_NAME(sym) sym
-#define ASM_SECTION   .section .rodata
-#define ASM_ALIGN     .balign 16
+#define SYM(name) name
 #endif
 
-ASM_SECTION
-ASM_ALIGN
+#if defined(__MACH__)
+.section __TEXT,__const
+#else
+.section .rodata
+#endif
 
-.global ASM_NAME(font_sans_reg_start)
-ASM_NAME(font_sans_reg_start):
+.balign 16
+.global SYM(font_sans_reg_start)
+SYM(font_sans_reg_start):
     .incbin "assets/fonts/LiberationSans-Regular.ttf"
-.global ASM_NAME(font_sans_reg_end)
-ASM_NAME(font_sans_reg_end):
+.global SYM(font_sans_reg_end)
+SYM(font_sans_reg_end):
 
-ASM_ALIGN
-
-.global ASM_NAME(font_sans_bold_start)
-ASM_NAME(font_sans_bold_start):
+.balign 16
+.global SYM(font_sans_bold_start)
+SYM(font_sans_bold_start):
     .incbin "assets/fonts/LiberationSans-Bold.ttf"
-.global ASM_NAME(font_sans_bold_end)
-ASM_NAME(font_sans_bold_end):
+.global SYM(font_sans_bold_end)
+SYM(font_sans_bold_end):
 
-ASM_ALIGN
-
-.global ASM_NAME(font_mono_start)
-ASM_NAME(font_mono_start):
+.balign 16
+.global SYM(font_mono_start)
+SYM(font_mono_start):
     .incbin "assets/fonts/LiberationMono-Regular.ttf"
-.global ASM_NAME(font_mono_end)
-ASM_NAME(font_mono_end):
+.global SYM(font_mono_end)
+SYM(font_mono_end):
 
-#if !defined(__APPLE__)
-    .section .note.GNU-stack,"",@progbits
+/* ELF-only: mark the stack as non-executable (no-op on Mach-O) */
+#if !defined(__MACH__)
+.section .note.GNU-stack,"",@progbits
 #endif
