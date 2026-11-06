@@ -6,7 +6,7 @@
 
 enum {
     APP_FINDER = 0, APP_TERMINAL, APP_TEXTEDIT, APP_ABOUT,
-    APP_SETTINGS, APP_BOOTCAMP, APP_COUNT
+    APP_SETTINGS, APP_BOOTCAMP, APP_NEXUS, APP_COUNT
 };
 #define APP_TRASH 100
 
@@ -19,10 +19,11 @@ void app_textedit_open(void);
 void app_about_open(void);
 void app_settings_open(void);
 void app_bootcamp_open(void);
+void app_nexus_open(void);
 void app_textedit_save(void);      /* square shortcut */
 void app_textedit_open_path(const char *path);
 void app_textedit_open_content(const char *title, const char *text);
                                    /* read-only in-memory snapshot view */
 void app_terminal_run(const char *cmd); /* programmatic exec */
-void app_nexus_open(void);
+
 #endif
